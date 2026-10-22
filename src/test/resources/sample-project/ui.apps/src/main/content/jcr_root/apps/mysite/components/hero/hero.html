@@ -1,0 +1,7 @@
+<div data-sly-use.hero="com.mysite.core.models.HeroModel"
+     data-sly-use.template="core/wcm/components/commons/v1/templates.html"
+     data-sly-use.helper="${'com.mysite.core.models.HeroHelper' @ mode='full'}"
+     class="cmp-hero">
+    <h1 class="cmp-hero__title">${hero.title}</h1>
+    <sly data-sly-call="${template.placeholder @ isEmpty=!hero.title}"></sly>
+</div>

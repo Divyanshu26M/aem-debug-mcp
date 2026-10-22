@@ -1,0 +1,5 @@
+{
+  "org.apache.sling.commons.log.level": "debug",
+  "org.apache.sling.commons.log.names": ["com.mysite"],
+  "org.apache.sling.commons.log.file": "logs/mysite.log"
+}
