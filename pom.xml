@@ -1,0 +1,373 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>dev.aemdebug</groupId>
+    <artifactId>aem-debug-mcp</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+    <packaging>jar</packaging>
+
+    <name>aem-debug-mcp</name>
+    <description>
+        Local MCP server for debugging AEM development: renders pages, maps rendered output to components and
+        source, reads content and config, and captures JVM state over JDWP, all correlated per HTTP request.
+    </description>
+
+    <properties>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+        <!-- Built with JDK 21; byte code targets 17 so any JDK >= 17 (with jdk.jdi) can run the server. -->
+        <maven.compiler.release>17</maven.compiler.release>
+
+        <mcp.version>2.1.0</mcp.version>
+        <playwright.version>1.64.0</playwright.version>
+        <jsoup.version>1.18.3</jsoup.version>
+        <logback.version>1.5.12</logback.version>
+        <junit.version>5.11.4</junit.version>
+        <assertj.version>3.26.3</assertj.version>
+
+        <!-- E2E tests need a running local AEM; they only run with -Pe2e. Browser tests need Edge/Chrome (-Pbrowser-tests). -->
+        <test.excludedGroups>e2e,browser</test.excludedGroups>
+        <shaded.jar.name>aem-debug-mcp</shaded.jar.name>
+
+        <!--
+          Playwright's driver-bundle ships a Node.js binary for every platform (~195 MB). The OS profiles below keep only
+          the current platform; build with -Pall-platforms for a universal jar.
+        -->
+        <pw.exclude.a>__keep__/a/**</pw.exclude.a>
+        <pw.exclude.b>__keep__/b/**</pw.exclude.b>
+        <pw.exclude.c>__keep__/c/**</pw.exclude.c>
+        <pw.exclude.d>__keep__/d/**</pw.exclude.d>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>io.modelcontextprotocol.sdk</groupId>
+                <artifactId>mcp-bom</artifactId>
+                <version>${mcp.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.junit</groupId>
+                <artifactId>junit-bom</artifactId>
+                <version>${junit.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <dependencies>
+        <!-- MCP Java SDK with the Jackson 2 JSON binding -->
+        <dependency>
+            <groupId>io.modelcontextprotocol.sdk</groupId>
+            <artifactId>mcp-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.modelcontextprotocol.sdk</groupId>
+            <artifactId>mcp-json-jackson2</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>com.microsoft.playwright</groupId>
+            <artifactId>playwright</artifactId>
+            <version>${playwright.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.jsoup</groupId>
+            <artifactId>jsoup</artifactId>
+            <version>${jsoup.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>ch.qos.logback</groupId>
+            <artifactId>logback-classic</artifactId>
+            <version>${logback.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <version>${assertj.version}</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>false</filtering>
+            </resource>
+            <resource>
+                <directory>src/main/resources-filtered</directory>
+                <filtering>true</filtering>
+            </resource>
+        </resources>
+
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.13.0</version>
+                <configuration>
+                    <release>${maven.compiler.release}</release>
+                    <debug>true</debug>
+                </configuration>
+            </plugin>
+
+            <!-- The JDI fixture application is compiled with the tests and launched in a separate JVM. -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>build-helper-maven-plugin</artifactId>
+                <version>3.6.0</version>
+                <executions>
+                    <execution>
+                        <id>add-fixture-app</id>
+                        <phase>generate-test-sources</phase>
+                        <goals>
+                            <goal>add-test-source</goal>
+                        </goals>
+                        <configuration>
+                            <sources>
+                                <source>fixture-app/src/main/java</source>
+                            </sources>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.5.2</version>
+                <configuration>
+                    <excludedGroups>${test.excludedGroups}</excludedGroups>
+                    <trimStackTrace>false</trimStackTrace>
+                    <argLine>-Djava.awt.headless=true</argLine>
+                    <systemPropertyVariables>
+                        <aemdebug.testClasses>${project.build.testOutputDirectory}</aemdebug.testClasses>
+                        <aemdebug.fixtureSources>${project.basedir}/fixture-app/src/main/java</aemdebug.fixtureSources>
+                    </systemPropertyVariables>
+                </configuration>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+                <version>3.6.0</version>
+                <executions>
+                    <execution>
+                        <id>shade-server</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>shade</goal>
+                        </goals>
+                        <configuration>
+                            <finalName>${shaded.jar.name}</finalName>
+                            <createDependencyReducedPom>false</createDependencyReducedPom>
+                            <transformers>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                    <mainClass>dev.aemdebug.McpMain</mainClass>
+                                    <manifestEntries>
+                                        <Multi-Release>true</Multi-Release>
+                                        <Implementation-Title>aem-debug-mcp</Implementation-Title>
+                                        <Implementation-Version>${project.version}</Implementation-Version>
+                                    </manifestEntries>
+                                </transformer>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ApacheLicenseResourceTransformer"/>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ApacheNoticeResourceTransformer"/>
+                            </transformers>
+                            <filters>
+                                <filter>
+                                    <artifact>*:*</artifact>
+                                    <excludes>
+                                        <exclude>META-INF/*.SF</exclude>
+                                        <exclude>META-INF/*.DSA</exclude>
+                                        <exclude>META-INF/*.RSA</exclude>
+                                        <exclude>META-INF/*.EC</exclude>
+                                        <exclude>module-info.class</exclude>
+                                        <exclude>META-INF/versions/*/module-info.class</exclude>
+                                    </excludes>
+                                </filter>
+                                <filter>
+                                    <artifact>com.microsoft.playwright:driver-bundle</artifact>
+                                    <excludes>
+                                        <exclude>${pw.exclude.a}</exclude>
+                                        <exclude>${pw.exclude.b}</exclude>
+                                        <exclude>${pw.exclude.c}</exclude>
+                                        <exclude>${pw.exclude.d}</exclude>
+                                    </excludes>
+                                </filter>
+                            </filters>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <!-- Copy the shaded jar into the Copilot plugin layout (plugin/server/aem-debug-mcp.jar). -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-antrun-plugin</artifactId>
+                <version>3.1.0</version>
+                <executions>
+                    <execution>
+                        <id>copy-jar-to-plugin</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                        <configuration>
+                            <target>
+                                <mkdir dir="${project.basedir}/plugin/server"/>
+                                <copy file="${project.build.directory}/${shaded.jar.name}.jar"
+                                      tofile="${project.basedir}/plugin/server/${shaded.jar.name}.jar"
+                                      overwrite="true"/>
+                            </target>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <!-- *IT tests drive the shaded jar over stdio with an MCP client. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-failsafe-plugin</artifactId>
+                <version>3.5.2</version>
+                <configuration>
+                    <excludedGroups>${test.excludedGroups}</excludedGroups>
+                    <trimStackTrace>false</trimStackTrace>
+                    <argLine>-Djava.awt.headless=true</argLine>
+                    <systemPropertyVariables>
+                        <aemdebug.jar>${project.build.directory}/${shaded.jar.name}.jar</aemdebug.jar>
+                        <aemdebug.itWork>${project.build.directory}/it-work</aemdebug.itWork>
+                    </systemPropertyVariables>
+                </configuration>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>integration-test</goal>
+                            <goal>verify</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+
+    <profiles>
+        <!-- mvn -Pe2e verify : also runs the E2E suite against the local AEM (AEM_AUTHOR_URL, AEM_JDWP_PORT, ...). -->
+        <profile>
+            <id>e2e</id>
+            <properties>
+                <test.excludedGroups>none</test.excludedGroups>
+            </properties>
+        </profile>
+        <!-- mvn -Pbrowser-tests verify : also runs tests that launch Edge/Chrome through Playwright. -->
+        <profile>
+            <id>browser-tests</id>
+            <properties>
+                <test.excludedGroups>e2e</test.excludedGroups>
+            </properties>
+        </profile>
+
+        <!-- Keep only the Node.js driver of the build platform in the shaded jar. -->
+        <profile>
+            <id>platform-windows</id>
+            <activation>
+                <os>
+                    <family>windows</family>
+                </os>
+            </activation>
+            <properties>
+                <pw.exclude.a>driver/linux/**</pw.exclude.a>
+                <pw.exclude.b>driver/linux-arm64/**</pw.exclude.b>
+                <pw.exclude.c>driver/mac/**</pw.exclude.c>
+                <pw.exclude.d>driver/mac-arm64/**</pw.exclude.d>
+            </properties>
+        </profile>
+        <profile>
+            <id>platform-mac-x64</id>
+            <activation>
+                <os>
+                    <family>mac</family>
+                    <arch>x86_64</arch>
+                </os>
+            </activation>
+            <properties>
+                <pw.exclude.a>driver/linux/**</pw.exclude.a>
+                <pw.exclude.b>driver/linux-arm64/**</pw.exclude.b>
+                <pw.exclude.c>driver/mac-arm64/**</pw.exclude.c>
+                <pw.exclude.d>driver/win32_x64/**</pw.exclude.d>
+            </properties>
+        </profile>
+        <profile>
+            <id>platform-mac-arm64</id>
+            <activation>
+                <os>
+                    <family>mac</family>
+                    <arch>aarch64</arch>
+                </os>
+            </activation>
+            <properties>
+                <pw.exclude.a>driver/linux/**</pw.exclude.a>
+                <pw.exclude.b>driver/linux-arm64/**</pw.exclude.b>
+                <pw.exclude.c>driver/mac/**</pw.exclude.c>
+                <pw.exclude.d>driver/win32_x64/**</pw.exclude.d>
+            </properties>
+        </profile>
+        <profile>
+            <id>platform-linux-x64</id>
+            <activation>
+                <os>
+                    <family>unix</family>
+                    <name>linux</name>
+                    <arch>amd64</arch>
+                </os>
+            </activation>
+            <properties>
+                <pw.exclude.a>driver/linux-arm64/**</pw.exclude.a>
+                <pw.exclude.b>driver/mac/**</pw.exclude.b>
+                <pw.exclude.c>driver/mac-arm64/**</pw.exclude.c>
+                <pw.exclude.d>driver/win32_x64/**</pw.exclude.d>
+            </properties>
+        </profile>
+        <profile>
+            <id>platform-linux-arm64</id>
+            <activation>
+                <os>
+                    <family>unix</family>
+                    <name>linux</name>
+                    <arch>aarch64</arch>
+                </os>
+            </activation>
+            <properties>
+                <pw.exclude.a>driver/linux/**</pw.exclude.a>
+                <pw.exclude.b>driver/mac/**</pw.exclude.b>
+                <pw.exclude.c>driver/mac-arm64/**</pw.exclude.c>
+                <pw.exclude.d>driver/win32_x64/**</pw.exclude.d>
+            </properties>
+        </profile>
+        <!-- Universal jar with the Node.js drivers of all platforms (~200 MB). -->
+        <profile>
+            <id>all-platforms</id>
+            <properties>
+                <pw.exclude.a>__keep__/a/**</pw.exclude.a>
+                <pw.exclude.b>__keep__/b/**</pw.exclude.b>
+                <pw.exclude.c>__keep__/c/**</pw.exclude.c>
+                <pw.exclude.d>__keep__/d/**</pw.exclude.d>
+            </properties>
+        </profile>
+    </profiles>
+</project>
