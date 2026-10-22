@@ -1,0 +1,20 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "aem-debug": {
+      "type": "stdio",
+      "command": "java",
+      "args": [
+        "-jar",
+        "${PLUGIN_ROOT}/server/aem-debug-mcp.jar"
+      ],
+      "env": {
+        "AEM_AUTHOR_URL": "http://localhost:4502",
+        "AEM_PUBLISH_URL": "http://localhost:4503",
+        "AEM_JDWP_HOST": "127.0.0.1",
+        "AEM_JDWP_PORT": "8767",
+        "AEM_DEBUG_ARTIFACTS_DIR": "${PLUGIN_DATA}"
+      }
+    }
+  }
+}
