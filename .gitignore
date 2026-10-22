@@ -1,0 +1,23 @@
+# Build output
+target/
+*.class
+dependency-reduced-pom.xml
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.classpath
+.project
+.settings/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Runtime logs and debug artifacts
+*.log
+.aem-debug-mcp/
+
+# Packaged server jar copied into the plugin layout
+plugin/server/*.jar
