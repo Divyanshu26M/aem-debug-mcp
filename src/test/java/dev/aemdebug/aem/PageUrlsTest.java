@@ -20,6 +20,31 @@ class PageUrlsTest {
     }
 
     @Test
+    void acceptsAuthoringUiUrls() {
+        assertThat(PageUrls.toRequestPath("http://localhost:4502/editor.html/content/wknd/us/en.html"))
+                .isEqualTo("/content/wknd/us/en.html");
+        assertThat(PageUrls.toRequestPath("/editor.html/content/wknd/us/en.html?wcmmode=disabled"))
+                .isEqualTo("/content/wknd/us/en.html?wcmmode=disabled");
+        assertThat(PageUrls.toRequestPath("editor.html/content/wknd/us/en")).isEqualTo("/content/wknd/us/en.html");
+        assertThat(PageUrls.toRequestPath(
+                "http://localhost:4502/editor.html/content/experience-fragments/wknd/footer/master.html"))
+                .isEqualTo("/content/experience-fragments/wknd/footer/master.html");
+        assertThat(PageUrls.toRequestPath("http://localhost:4502/sites.html/content/wknd/us/en"))
+                .isEqualTo("/content/wknd/us/en.html");
+        assertThat(PageUrls.toRequestPath("http://localhost:4502/cf#/content/wknd/us/en.html"))
+                .isEqualTo("/content/wknd/us/en.html");
+        assertThat(PageUrls.toRequestPath("/cf#/content/wknd/us/en.html")).isEqualTo("/content/wknd/us/en.html");
+        assertThat(PageUrls.toRequestPath("/editor.html")).isEqualTo("/editor.html");
+        assertThatThrownBy(() -> PageUrls.toRequestPath("https://author.example.com/editor.html/content/a.html"))
+                .isInstanceOf(SecurityException.class);
+
+        assertThat(PageUrls.isUrlOrAuthoringPath("http://localhost:4502/content/a.html")).isTrue();
+        assertThat(PageUrls.isUrlOrAuthoringPath("editor.html/content/a.html")).isTrue();
+        assertThat(PageUrls.isUrlOrAuthoringPath("/content/a/jcr:content/root")).isFalse();
+        assertThat(PageUrls.isUrlOrAuthoringPath(null)).isFalse();
+    }
+
+    @Test
     void addsAndReplacesWcmMode() {
         assertThat(PageUrls.withWcmMode("/content/a.html", "disabled")).isEqualTo("/content/a.html?wcmmode=disabled");
         assertThat(PageUrls.withWcmMode("/content/a.html?x=1&wcmmode=edit", "disabled"))

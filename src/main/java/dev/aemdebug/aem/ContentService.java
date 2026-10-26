@@ -291,9 +291,9 @@ public final class ContentService {
         return Json.asString(Json.asMap(node).get("cq:policy"));
     }
 
-    /** Page path from a page URL/path or a path inside the page (jcr:content/...). */
+    /** Page path from a page URL/path (including editor URLs) or a path inside the page (jcr:content/...). */
     public static String pagePathOf(String input) {
-        String path = normalizePath(input);
+        String path = normalizePath(PageUrls.isUrlOrAuthoringPath(input) ? PageUrls.toRequestPath(input) : input);
         int q = path.indexOf('?');
         if (q >= 0) {
             path = path.substring(0, q);

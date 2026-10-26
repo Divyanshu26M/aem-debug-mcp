@@ -37,7 +37,8 @@ public final class PageRenderTool extends AbstractTool {
 
     static Schema commonRenderSchema() {
         return Schema.object()
-                .requiredStr("path", "Page path or local URL, e.g. /content/wknd/us/en or /content/wknd/us/en.html?x=1")
+                .requiredStr("path", "Page path or local URL, e.g. /content/wknd/us/en or /content/wknd/us/en.html?x=1; "
+                        + "page editor, Sites console and classic UI (cf#) URLs work too")
                 .enumStr("instance", "author (default) or publish", "author", "publish")
                 .enumStr("wcmmode", "WCM mode on author (default disabled; none = no wcmmode parameter)",
                         "disabled", "edit", "preview", "none")

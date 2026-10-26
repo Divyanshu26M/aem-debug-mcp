@@ -28,6 +28,10 @@ class ContentServiceTest {
     void derivesPagePathAndLanguage() {
         assertThat(ContentService.pagePathOf("/content/site/en.html?wcmmode=disabled")).isEqualTo("/content/site/en");
         assertThat(ContentService.pagePathOf("/content/site/en/jcr:content/root/hero")).isEqualTo("/content/site/en");
+        assertThat(ContentService.pagePathOf("http://localhost:4502/editor.html/content/site/en.html"))
+                .isEqualTo("/content/site/en");
+        assertThat(ContentService.pagePathOf("/editor.html/content/site/en/jcr:content/root/hero"))
+                .isEqualTo("/content/site/en");
         assertThat(ContentService.languageFromPath("/content/site/us/en")).isEqualTo("en");
         assertThat(ContentService.languageFromPath("/content/site/language-masters/fr_CA")).isEqualTo("fr_CA");
         assertThat(ContentService.languageFromPath("/content/site/home")).isNull();
