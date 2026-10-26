@@ -140,3 +140,7 @@ This is an MVP. Interactive suspend/step debugging and a companion OSGi bundle a
 Some AEM console formats are implemented from documentation and parser fixtures and are still to be verified
 against a logged-in AEM. See [docs/spike-findings.md](docs/spike-findings.md) and
 [docs/troubleshooting.md](docs/troubleshooting.md).
+
+## License
+
+[MIT](LICENSE)
