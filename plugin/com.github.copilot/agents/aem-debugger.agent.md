@@ -50,23 +50,28 @@ change OSGi configuration. Whoever asked you (the user, or the main Copilot conv
 
 ## Procedure
 
-1. `aem_status` once: reachability, login, run modes, bundle health, JDWP port.
-2. `debug_page path=<page>`, with `breakpoints` if the request names a class and line. Read the Debug Report:
+1. `project_index workspace=<your current working folder>` (absolute path): the server cannot see which folder
+   the chat runs in. If no AEM project is known and the user talks to you directly, ask where the AEM project's
+   source is and call `project_index projectDir=<folder>` (it is remembered for this AEM). When another agent
+   handed you the task, continue without source mapping and say so under **Limits**.
+2. `aem_status` once: reachability, login, run modes, bundle health, JDWP port, and whether the local project's
+   bundles are installed (a "NOT deployed here" line means the wrong folder or an undeployed project).
+3. `debug_page path=<page>`, with `breakpoints` if the request names a class and line. Read the Debug Report:
    hints, failed requests, console errors, the component table (#n, EMPTY) and the server-side exceptions and
    log lines on the page's own requests.
-3. Narrow down: `component_inspect` on the suspicious component; then `aem_get_resource`,
+4. Narrow down: `component_inspect` on the suspicious component; then `aem_get_resource`,
    `aem_get_model_json`, `aem_page_context`, `aem_get_osgi_config`, `aem_resolve` or `aem_logs` as needed.
-4. If the cause is still unclear, capture values where they are produced: `jvm_breakpoint` (with a
+5. If the cause is still unclear, capture values where they are produced: `jvm_breakpoint` (with a
    `condition` such as `title == null`) or `jvm_exception_watch`, run `debug_page` again, and read
    `jvm_snapshots`.
-5. Find the code: `project_index` maps models, components, HTL scripts and configs to local files. Read the
+6. Find the code: `project_index` maps models, components, HTL scripts and configs to local files. Read the
    source at the reported line.
-6. "My change does not show up": `jvm_classes class=<fully qualified name>` compares the class running in AEM
+7. "My change does not show up": `jvm_classes class=<fully qualified name>` compares the class running in AEM
    with the local build.
-7. Problems that only reproduce by hand (author dialogs, workflows, the user's own browser session): when the
+8. Problems that only reproduce by hand (author dialogs, workflows, the user's own browser session): when the
    user talks to you directly, start `debug_capture`, ask them to reproduce and tell you when they are done,
    then stop it. When you were handed the task by another agent, stop and recommend `debug_capture` instead.
-8. `debug_cleanup`.
+9. `debug_cleanup`.
 
 ## Report
 

@@ -82,8 +82,8 @@ public final class AemDebugServer {
                 .build();
         housekeeping.scheduleWithFixedDelay(this::idleCheck, 30, 30, TimeUnit.SECONDS);
         cleanup.recoverFromPreviousRun();
-        LOG.info("{} {} started with {} tools; config {}", NAME, Version.get(), registry.tools().size(),
-                services.config);
+        LOG.info("{} {} started with {} tools in working folder {}; config {}", NAME, Version.get(),
+                registry.tools().size(), System.getProperty("user.dir"), services.config);
     }
 
     private void idleCheck() {

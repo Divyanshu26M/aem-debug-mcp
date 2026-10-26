@@ -116,7 +116,7 @@ All settings are environment variables of the MCP server process and are optiona
 | `AEM_AUTHOR_URL` | `http://localhost:4502` | Author instance (must be localhost/127.0.0.1/::1) |
 | `AEM_PUBLISH_URL` | `http://localhost:4503` | Publish instance |
 | `AEM_JDWP_HOST` / `AEM_JDWP_PORT` | `127.0.0.1` / `8767` | JDWP endpoint of AEM (local only) |
-| `AEM_PROJECT_DIR` | client workspace root or working directory | Local AEM project for source mapping |
+| `AEM_PROJECT_DIR` | - | A local AEM project folder for source mapping (see [Local project](#local-project)) |
 | `AEM_LOG_DIR` | `<sling.home>/logs` | Where `error.log` is read from |
 | `AEM_USER` / `AEM_PASSWORD` | - | Non-interactive login fallback (never logged or returned) |
 | `AEM_DEBUG_BROWSER_CHANNEL` | auto (`msedge` on Windows, else `chrome`) | `msedge`, `chrome` or `chromium` |
@@ -124,6 +124,32 @@ All settings are environment variables of the MCP server process and are optiona
 | `AEM_DEBUG_PROJECT_PACKAGES` | from the project index | Java packages watched for exceptions by default |
 | `AEM_DEBUG_IDLE_DETACH_MINUTES` | `15` | Idle time before JDWP detach and debug-toggle revert (0 = never) |
 | `AEM_DEBUG_LOGIN_WAIT_SECONDS` | `60` | How long a tool waits for the user to finish signing in |
+
+## Local project
+
+To link what AEM runs to your files, the server indexes the source of your local AEM project(s): Java (Sling
+Models, servlets), HTL, component definitions, OSGi configs, client libraries and the Maven modules. It does not
+decompile anything and does not read build logs. `jvm_classes` also reads line numbers from the compiled classes
+in `target/classes`.
+
+A chat can use several project folders at once, for example two repositories deployed into the same AEM. The
+folders come from:
+
+1. **The chat's folder.** Copilot does not tell MCP servers which folder a chat runs in, so the skill and the
+   agent pass it at the start: `project_index workspace=<folder>`. It is used for that chat only.
+2. **Folders named in a chat** with `project_index projectDir=<folder>`. They are remembered per AEM author URL in
+   `projects.json`, so later chats use them without asking. `replace=true` keeps only the named folder;
+   `remove=<folder>` forgets one.
+3. `AEM_PROJECT_DIR`.
+4. The client's workspace roots (in clients that share them, such as VS Code), and the server's working folder.
+
+A folder counts when it is inside an AEM Maven project (`ui.apps`, `core`, `all`, `ui.config` or
+`src/main/content` next to a `pom.xml`). A repository whose root `pom.xml` aggregates several AEM projects is
+indexed as a whole, from any folder inside it. When no project is known, Copilot asks you where it is.
+
+When you are logged in, `aem_status` and `project_index` check each project folder against the bundles installed
+in AEM: `deployed`, `partly deployed`, or `NOT deployed here`. The last one means the folder is wrong or the
+project is not deployed on this instance.
 
 ## Authentication
 
@@ -139,3 +165,4 @@ Everything goes to `AEM_DEBUG_ARTIFACTS_DIR`:
 - `aem-debug-mcp.log` - server log (stdout is reserved for the MCP protocol)
 - `reports/rpt-NNNN/` - report artifacts (also exposed as `aemdbg://reports/rpt-NNNN/<file>` resources)
 - `toggle-journal.json` - debug toggles to revert (debug settings only, no credentials)
+- `projects.json` - local project folders named in chats, per AEM author URL (paths only)

@@ -16,7 +16,7 @@ import java.util.Map;
  * AEM_AUTHOR_URL                 default http://localhost:4502
  * AEM_PUBLISH_URL                default http://localhost:4503
  * AEM_JDWP_HOST / AEM_JDWP_PORT  default 127.0.0.1 / 8767
- * AEM_PROJECT_DIR                local AEM project (else MCP roots / working directory)
+ * AEM_PROJECT_DIR                a local AEM project folder (more via project_index, see ProjectIndexService)
  * AEM_LOG_DIR                    crx-quickstart/logs (else detected from sling.home)
  * AEM_USER / AEM_PASSWORD        non-interactive login fallback (never logged or returned)
  * AEM_DEBUG_BROWSER_CHANNEL      msedge | chrome | chromium (default: auto)

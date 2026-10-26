@@ -21,7 +21,9 @@ browser render ──► component map ──► Sling Models / HTL / local sour
   status, failed requests (for example a clientlib 404) and console errors.
 - **Map pixels to code**: every component on the page gets a number (#n) on the screenshot. For each one you
   get its resource path, resource type, whether it rendered empty, the Sling Model behind it and the local
-  model/HTL files.
+  model/HTL files. The local source comes from the chat's folder or from project folders you name once
+  (several repositories, or one repository that aggregates several AEM projects); see
+  [docs/setup.md](docs/setup.md#local-project).
 - **Read content and config**: JCR resources, model JSON, QueryBuilder, page context (template, policies,
   context-aware config), effective OSGi configurations, bundle/component/Sling Model health, servlet
   resolution, error.log, and the Recent Requests console. All of this is read-only.

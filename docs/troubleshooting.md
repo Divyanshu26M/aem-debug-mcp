@@ -1,5 +1,16 @@
 # Troubleshooting
 
+## Local project
+
+**"No local AEM project is known" or results without source file links**
+The server cannot see which folder a chat runs in. Tell Copilot where the project is ("my AEM project is at
+C:\code\mysite"); it calls `project_index projectDir=<folder>`, and the folder is remembered for that AEM. A chat
+opened inside the project finds it through `project_index workspace=<folder>`. See [setup](setup.md#local-project).
+
+**"NOT deployed here" in `aem_status` or `project_index`**
+None of the bundles built by that folder is installed in AEM. Either the folder is wrong (another project or
+branch), or the project is not deployed on this instance. Use `project_index remove=<folder>` to stop using it.
+
 ## JVM debugging
 
 **"JDWP port ... refused the connection" or `aem_status` says the port is not accepting connections**

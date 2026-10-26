@@ -217,4 +217,47 @@ public final class ProjectIndex {
                 modules.size(), classes.size(), models.size(), components.size(), scripts.size(), servlets.size(),
                 osgiConfigs.size(), clientLibs.size());
     }
+
+    /** One index over several project roots; paths are shown relative to their common parent folder. */
+    static ProjectIndex merge(List<ProjectIndex> parts) {
+        if (parts.size() == 1) {
+            return parts.get(0);
+        }
+        List<ProjectModel.Module> modules = new ArrayList<>();
+        List<ProjectModel.JavaClass> classes = new ArrayList<>();
+        List<ProjectModel.SlingModel> models = new ArrayList<>();
+        List<ProjectModel.Component> components = new ArrayList<>();
+        List<ProjectModel.HtlScript> scripts = new ArrayList<>();
+        List<ProjectModel.Servlet> servlets = new ArrayList<>();
+        List<ProjectModel.OsgiConfigFile> osgiConfigs = new ArrayList<>();
+        List<ProjectModel.ClientLib> clientLibs = new ArrayList<>();
+        List<String> warnings = new ArrayList<>();
+        Path common = null;
+        for (ProjectIndex part : parts) {
+            modules.addAll(part.modules);
+            classes.addAll(part.classes);
+            models.addAll(part.models);
+            components.addAll(part.components);
+            scripts.addAll(part.scripts);
+            servlets.addAll(part.servlets);
+            osgiConfigs.addAll(part.osgiConfigs);
+            clientLibs.addAll(part.clientLibs);
+            for (String warning : part.warnings) {
+                warnings.add(part.root.getFileName() + ": " + warning);
+            }
+            common = common == null ? part.root : commonParent(common, part.root);
+        }
+        return new ProjectIndex(common, modules, classes, models, components, scripts, servlets, osgiConfigs,
+                clientLibs, warnings);
+    }
+
+    /** Deepest folder containing both paths, or the first path when they share none (different drives). */
+    static Path commonParent(Path a, Path b) {
+        for (Path candidate = a; candidate != null; candidate = candidate.getParent()) {
+            if (b.startsWith(candidate)) {
+                return candidate;
+            }
+        }
+        return a;
+    }
 }

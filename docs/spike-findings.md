@@ -16,6 +16,8 @@ sources with fallbacks and parser fixtures, still waiting for a logged-in end-to
 | Felix `BundleClassLoader` internals (`m_wiring.m_revision`) name the bundle of a loaded class: `bundle 595 org.apache.sling.engine 2.16.6 (revision 595.0)` | `LocalAemE2ETest` (`classVersions` of `SlingMainServlet`) |
 | Non-suspending capture, exceptions at the throw site (caught and uncaught), deferred arming, logpoints, conditions, flood protection, several breakpoints on one line, class line tables | `JdiEngineFixtureTest` against a real JVM (fixture app with Sling-style thread names) |
 | MCP contract (24 tools with descriptions and object schemas, report resources, clean stdout, exit on stdin EOF) | `StdioServerIT` against the shaded jar, plus an independent TypeScript MCP client smoke test |
+| Copilot CLI 1.0.103 as MCP client: no workspace roots, server started in the plugin folder (not the chat's folder), elicitation supported. So the chat's folder must be passed explicitly (`project_index workspace=`) | Server log of a plugin session started in an AEM repository |
+| Project detection on a real repository: an aggregator `pom.xml` with two archetype AEM projects is detected from its root and indexed as one project in 1.4 s (24 modules, 533 classes, 159 Sling Models, 299 components) | `project_index workspace=` from Copilot CLI |
 
 ## Implemented, to be verified with a logged-in session
 

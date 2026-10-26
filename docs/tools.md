@@ -39,7 +39,7 @@ files under the artifacts directory.
 | `page_render` | Headless render (installed Edge/Chrome) with a screenshot, HTTP status, timings, failed requests and console errors. Author pages use `wcmmode=disabled` by default. |
 | `page_component_map` | Maps the rendered page to components: numbered boxes (#n) on the screenshot, empty components, Sling Models and local model/HTL files. |
 | `component_inspect` | One component in depth: JCR properties vs model JSON vs model fields, HTL script, policy, HTML fragment, cropped screenshot and related log lines. |
-| `project_index` | Indexes the local AEM project: modules, Sling Models (injections, resource types), components, HTL scripts and their use-objects, servlets, OSGi config files, client libraries. |
+| `project_index` | Finds and indexes the local AEM project(s): modules, Sling Models (injections, resource types), components, HTL scripts and their use-objects, servlets, OSGi config files, client libraries. `workspace=<folder>` uses the chat's folder; `projectDir=<folder>` adds a project and remembers it for this AEM (`replace`, `remove` manage the list). Aggregator repositories and several repositories are supported. When logged in, it shows which projects' bundles are installed. |
 
 ## JVM (JDWP)
 

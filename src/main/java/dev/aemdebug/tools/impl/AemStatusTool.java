@@ -11,6 +11,8 @@ import dev.aemdebug.aem.RequestOptions;
 import dev.aemdebug.aem.SlingSettings;
 import dev.aemdebug.jdi.JdwpPortProbe;
 import dev.aemdebug.logs.LogLocator;
+import dev.aemdebug.project.ProjectIndex;
+import dev.aemdebug.project.ProjectIndexService;
 import dev.aemdebug.server.Services;
 import dev.aemdebug.tools.AbstractTool;
 import dev.aemdebug.tools.ToolContext;
@@ -32,9 +34,10 @@ public final class AemStatusTool extends AbstractTool {
     public AemStatusTool(Services services) {
         super("aem_status", "AEM debug status",
                 "Checks the local AEM debugging setup: reachability of author/publish, authentication state, AEM "
-                        + "version, run modes, sling.home and error.log location, bundle health, and whether the JDWP "
-                        + "debug port is free or held by another debugger (e.g. IntelliJ). Call this first. Read-only; "
-                        + "it only opens the AEM login window when login=true.",
+                        + "version, run modes, sling.home and error.log location, bundle health, the local AEM project "
+                        + "in use (and, when logged in, whether its bundles are installed), and whether the JDWP debug "
+                        + "port is free or held by another debugger (e.g. IntelliJ). Call this first, after project_index "
+                        + "workspace=<your working folder>. Read-only; it only opens the AEM login window when login=true.",
                 Schema.object()
                         .enumStr("instance", "Instance to check (default all configured)", "author", "publish", "all")
                         .bool("login", "Open the interactive AEM login window if not authenticated (default false)")
@@ -65,8 +68,14 @@ public final class AemStatusTool extends AbstractTool {
         if (!which.equals("author") && s.instances.publishOrNull() != null) {
             selected.add(s.instances.publishOrNull());
         }
+        List<ProjectIndexService.Root> roots = s.projects.roots(context);
+        ProjectIndex project = roots.isEmpty() ? null : s.projects.get(context);
         for (AemInstance instance : selected) {
-            out.append(instanceStatus(context, instance, login));
+            out.append(instanceStatus(context, instance, login, roots, project));
+        }
+        out.append("\n### Local AEM project\n").append(ProjectStatus.roots(s, roots));
+        if (project != null) {
+            out.append("- index: ").append(project.summary()).append('\n');
         }
         if (checkJdwp) {
             out.append(StatusSections.jdwp(s));
@@ -74,7 +83,8 @@ public final class AemStatusTool extends AbstractTool {
         return ToolResult.of(out.toString());
     }
 
-    private String instanceStatus(ToolContext context, AemInstance instance, boolean login) {
+    private String instanceStatus(ToolContext context, AemInstance instance, boolean login,
+                                  List<ProjectIndexService.Root> roots, ProjectIndex project) {
         StringBuilder sb = new StringBuilder("\n### ").append(instance.name()).append(' ')
                 .append(instance.baseUrl()).append('\n');
         AemResponse loginPage;
@@ -162,6 +172,7 @@ public final class AemStatusTool extends AbstractTool {
                 }
             }
             sb.append('\n');
+            sb.append(ProjectStatus.deployment(project, roots, bundles, "- local project "));
         } catch (RuntimeException e) {
             sb.append("- bundles: unavailable (").append(Text.oneLine(e.getMessage(), 160)).append(")\n");
         }

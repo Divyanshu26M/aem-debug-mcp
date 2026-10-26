@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -21,6 +22,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 public final class ToolContext {
 
     private static final Logger LOG = LoggerFactory.getLogger(ToolContext.class);
+    private static final AtomicBoolean CLIENT_LOGGED = new AtomicBoolean();
 
     /** Outcome of a confirmation request. */
     public enum Confirmation {
@@ -111,7 +113,15 @@ public final class ToolContext {
         }
         try {
             McpSchema.ClientCapabilities capabilities = exchange.getClientCapabilities();
-            if (capabilities == null || capabilities.roots() == null) {
+            boolean supported = capabilities != null && capabilities.roots() != null;
+            if (CLIENT_LOGGED.compareAndSet(false, true)) {
+                McpSchema.Implementation client = exchange.getClientInfo();
+                LOG.info("MCP client {}: workspace roots {}, elicitation {}",
+                        client == null ? "unknown" : client.name() + " " + client.version(),
+                        supported ? "supported" : "not supported",
+                        capabilities != null && capabilities.elicitation() != null ? "supported" : "not supported");
+            }
+            if (!supported) {
                 return paths;
             }
             McpSchema.ListRootsResult result = exchange.listRoots();

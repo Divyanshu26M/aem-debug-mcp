@@ -136,7 +136,8 @@ public final class ComponentInspectTool extends AbstractTool {
                 hints.addAll(Hints.modelVsContent(model, properties));
             }
         } else if (index == null) {
-            out.append("- no local project indexed (set AEM_PROJECT_DIR or run project_index)\n");
+            out.append("- no local project known (project_index workspace=<your folder>, or ask the user for the project "
+                    + "folder and call project_index projectDir=<folder>)\n");
         }
         hints.addAll(Hints.modelJsonVsContent(modelJson, properties));
 

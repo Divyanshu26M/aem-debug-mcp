@@ -98,7 +98,8 @@ class StdioServerIT {
                 String statusText = text(status);
                 assertThat(status.isError()).as(statusText).isFalse();
                 assertThat(statusText).contains("logged in as admin").contains("3 total, 1 not active")
-                        .contains("run modes: author, crx3").contains("error.log");
+                        .contains("run modes: author, crx3").contains("error.log")
+                        .contains("### Local AEM project").contains("project_index projectDir=<folder>");
                 assertThat(statusText).doesNotContain("admin\",\"j_password");
 
                 McpSchema.CallToolResult auth = client.callTool(McpSchema.CallToolRequest.builder("aem_auth")

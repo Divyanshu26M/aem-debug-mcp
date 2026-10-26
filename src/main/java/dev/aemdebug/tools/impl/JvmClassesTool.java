@@ -90,7 +90,8 @@ public final class JvmClassesTool extends AbstractTool {
 
     static String compareWithLocal(ProjectIndex index, JdiEngine.ClassVersion version) {
         if (index == null) {
-            return "local build: no project indexed - cannot compare (project_index locates the project).";
+            return "local build: no local project known - cannot compare (project_index workspace=<your folder> or "
+                    + "projectDir=<project folder> sets it).";
         }
         Path classFile = index.classFile(version.name);
         if (classFile == null || !Files.isRegularFile(classFile)) {

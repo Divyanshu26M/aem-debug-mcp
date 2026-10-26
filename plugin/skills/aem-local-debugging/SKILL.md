@@ -31,22 +31,30 @@ the evidence and the file and line to fix, and you then make the fix here.
 
 ## The loop
 
-1. `aem_status` - reachability, login state, AEM version, run modes, log location, bundle health, JDWP port.
-2. Reproduce with `debug_page path=/content/...` - one call renders the page (screenshot, console errors,
+1. `project_index workspace=<your current working folder>` (absolute path) - links AEM to the local source.
+   The server cannot see which folder the chat runs in, so always pass it. If the result says no AEM project
+   is known, ask the user where the AEM project's source is (one repository, an aggregator repository, or
+   several repositories deployed into the same AEM) and call `project_index projectDir=<folder>` for each. The
+   answer is remembered for this AEM, so later chats do not ask again. Without a project everything still
+   works, but nothing links to source files.
+2. `aem_status` - reachability, login state, AEM version, run modes, log location, bundle health, JDWP port, and
+   whether the local project's bundles are installed (a "NOT deployed here" line means the wrong folder or an
+   undeployed project: tell the user).
+3. Reproduce with `debug_page path=/content/...` - one call renders the page (screenshot, console errors,
    failed requests), maps components, watches exceptions in project code / Sling Models / HTL on the server,
    collects error.log lines and the Request Progress Tracker for that request, and returns a Debug Report with
    hints. Add `breakpoints` (e.g. `["com.mysite.core.models.HeroModel:41"]`) to capture variable values.
-3. Identify the component: the report and `page_component_map` number components (#n) on the screenshot.
-4. Inspect: `component_inspect path=<component path>` (JCR vs model JSON vs model fields, HTL, policy,
+4. Identify the component: the report and `page_component_map` number components (#n) on the screenshot.
+5. Inspect: `component_inspect path=<component path>` (JCR vs model JSON vs model fields, HTL, policy,
    HTML fragment, related logs). Use `aem_get_resource`, `aem_get_model_json`, `aem_page_context`,
    `aem_get_osgi_config`, `aem_resolve`, `aem_logs`, `aem_recent_requests` for specifics.
-5. Look inside the JVM: `jvm_breakpoint action=set location=Class:line` (or `File.java:line`, or
+6. Look inside the JVM: `jvm_breakpoint action=set location=Class:line` (or `File.java:line`, or
    `Class#method`), optional `condition` like `title == null`, then re-run `debug_page`; read values with
    `jvm_snapshots`. Use `jvm_exception_watch` for exceptions that are caught and swallowed.
-6. Diagnose in the local source (`project_index` maps classes, models, HTL, configs to files), fix the code.
-7. Ask the user to rebuild/deploy (e.g. `mvn clean install -PautoInstallSinglePackage`), then check
+7. Diagnose in the local source (`project_index` maps classes, models, HTL, configs to files), fix the code.
+8. Ask the user to rebuild/deploy (e.g. `mvn clean install -PautoInstallSinglePackage`), then check
    `jvm_classes` (stale class?) and verify with `debug_page`.
-8. `debug_cleanup`.
+9. `debug_cleanup`.
 
 Use `debug_capture action=start` when the user wants to reproduce manually in their own browser or in the
 AEM author UI, then `debug_capture action=stop` for the per-request report.
