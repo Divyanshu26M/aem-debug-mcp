@@ -3,17 +3,22 @@ package dev.aemdebug.aem;
 import dev.aemdebug.tools.ToolException;
 
 import java.net.URI;
+import java.util.List;
 import java.util.Locale;
 
 /** Normalizes page paths/URLs given by the agent into request paths on a local instance. */
 public final class PageUrls {
 
+    /** AEM authoring UIs that wrap a content path, e.g. /editor.html/content/site/en.html. */
+    private static final List<String> AUTHORING_PREFIXES = List.of("/editor.html", "/sites.html", "/cf#");
+
     private PageUrls() {
     }
 
     /**
-     * Accepts "/content/site/en", "/content/site/en.html", "content/site/en.html?x=1" or a full local URL and
-     * returns a path with query starting with "/". Pages without extension under /content get ".html".
+     * Accepts "/content/site/en", "/content/site/en.html", "content/site/en.html?x=1", a full local URL, or the URL of
+     * the page editor, the Sites console or the classic UI (cf#) showing the page, and returns a path with query
+     * starting with "/". Pages without extension under /content get ".html".
      */
     public static String toRequestPath(String input) {
         if (input == null || input.isBlank()) {
@@ -23,12 +28,17 @@ public final class PageUrls {
         if (value.startsWith("http://") || value.startsWith("https://")) {
             URI uri = URI.create(value);
             dev.aemdebug.config.HostPolicy.requireLocal(uri);
-            value = (uri.getRawPath() == null ? "/" : uri.getRawPath())
-                    + (uri.getRawQuery() == null ? "" : "?" + uri.getRawQuery());
+            String rawPath = uri.getRawPath() == null ? "/" : uri.getRawPath();
+            if ("/cf".equals(rawPath) && uri.getRawFragment() != null) {
+                value = "/cf#" + uri.getRawFragment();
+            } else {
+                value = rawPath + (uri.getRawQuery() == null ? "" : "?" + uri.getRawQuery());
+            }
         }
         if (!value.startsWith("/")) {
             value = "/" + value;
         }
+        value = withoutAuthoringPrefix(value);
         String path = value;
         String query = "";
         int q = value.indexOf('?');
@@ -41,6 +51,29 @@ public final class PageUrls {
             path = path + ".html";
         }
         return path + query;
+    }
+
+    /** "/editor.html/content/a.html" becomes "/content/a.html"; likewise for the Sites console and cf#. */
+    static String withoutAuthoringPrefix(String path) {
+        for (String prefix : AUTHORING_PREFIXES) {
+            if (path.startsWith(prefix + "/")) {
+                return path.substring(prefix.length());
+            }
+        }
+        return path;
+    }
+
+    /** True for full URLs and authoring UI paths that {@link #toRequestPath} has to unwrap. */
+    public static boolean isUrlOrAuthoringPath(String input) {
+        if (input == null) {
+            return false;
+        }
+        String value = input.trim();
+        if (value.startsWith("http://") || value.startsWith("https://")) {
+            return true;
+        }
+        String path = value.startsWith("/") ? value : "/" + value;
+        return !withoutAuthoringPrefix(path).equals(path);
     }
 
     /** Adds or replaces the wcmmode query parameter; "none" leaves the URL unchanged. */

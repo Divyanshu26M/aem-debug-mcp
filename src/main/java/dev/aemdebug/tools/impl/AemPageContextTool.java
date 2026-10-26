@@ -26,7 +26,7 @@ public final class AemPageContextTool extends AbstractTool {
                         + "available CA configs), language, and replication status. Use it for policy/style-system "
                         + "issues and 'works on one site but not another' problems. Read-only.",
                 Schema.object()
-                        .requiredStr("path", "Page path or URL, e.g. /content/wknd/us/en")
+                        .requiredStr("path", "Page path or URL, e.g. /content/wknd/us/en (page editor URLs work too)")
                         .str("component", "Optional component path inside the page to resolve its policy")
                         .enumStr("instance", "author (default) or publish", "author", "publish"));
         this.s = services;
