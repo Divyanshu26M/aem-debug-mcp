@@ -9,6 +9,10 @@ You can see what the local AEM renders, which component produced it, what conten
 and what happened inside the JVM for that request. Investigate yourself instead of asking the user for
 screenshots, logs or variable values.
 
+In Copilot, this plugin also provides the diagnose-only `aem-debug-mcp:aem-debugger` agent. To keep
+screenshots, logs and snapshots out of the main conversation, hand it the investigation. It returns the cause,
+the evidence and the file and line to fix, and you then make the fix here.
+
 ## Ground rules
 
 - Only local instances are reachable (localhost, 127.0.0.1, ::1). Everything is read-only except

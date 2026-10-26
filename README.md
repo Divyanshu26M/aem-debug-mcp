@@ -46,6 +46,9 @@ browser render ──► component map ──► Sling Models / HTL / local sour
 
 See [docs/tools.md](docs/tools.md) for what each tool does. The bundled
 [`aem-local-debugging` skill](plugin/skills/aem-local-debugging/SKILL.md) teaches the agent the debugging loop.
+In Copilot, the plugin also adds the diagnose-only
+[`aem-debugger` agent](plugin/com.github.copilot/agents/aem-debugger.agent.md). Copilot can hand it a debugging
+task; it uses the debug tools, cannot change anything, and returns the cause with the file and line to fix.
 
 ## Safety model
 
@@ -76,7 +79,7 @@ See [docs/tools.md](docs/tools.md) for what each tool does. The bundled
 
 ## Install
 
-**Copilot plugin** (server plus skill):
+**Copilot plugin** (server, skill and agent):
 
 ```
 mvn -B -DskipTests package          # builds target/aem-debug-mcp.jar and copies it to plugin/server/
@@ -124,7 +127,8 @@ src/main/java/dev/aemdebug/
   toggles/    confirmed, journaled, auto-reverted debug OSGi toggles
   project/    local project indexer (models, components, HTL, servlets, OSGi configs, clientlibs)
 fixture-app/  tiny JVM app used by the JDI tests
-plugin/       Copilot plugin: plugin.json, mcp.json, skills/aem-local-debugging, launchers
+plugin/       Copilot plugin: plugin.json, mcp.json, skills/aem-local-debugging,
+              com.github.copilot/agents/aem-debugger, launchers
 docs/         setup, tools, troubleshooting, spike findings
 ```
 

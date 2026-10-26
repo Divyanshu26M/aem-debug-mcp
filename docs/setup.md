@@ -50,6 +50,12 @@ The plugin contains:
 - `plugin.json` - plugin manifest
 - `mcp.json` - starts `java -jar ${PLUGIN_ROOT}/server/aem-debug-mcp.jar` over stdio
 - `skills/aem-local-debugging/SKILL.md` - teaches the agent the debugging loop and recipes
+- `com.github.copilot/agents/aem-debugger.agent.md` - a diagnose-only agent: it can use every debug tool except
+  `aem_debug_toggle`, plus reading and searching code, but cannot edit files, run commands or deploy. Copilot
+  hands debugging tasks to it, or you select it with `/agent` (or `copilot --agent aem-debug-mcp:aem-debugger`;
+  plugin agents carry the plugin name as a prefix). It returns a diagnosis with evidence and the file
+  and line to fix, so screenshots, logs and snapshots stay out of your main conversation. Agents are
+  Copilot-specific; the server and the skill also work in other clients.
 - `bin/aem-debug-mcp.cmd|sh` - launchers with a Java version check (for standalone use)
 
 Edit `plugin/mcp.json` (before installing) to change the AEM URLs, JDWP port or to add `AEM_PROJECT_DIR`.
