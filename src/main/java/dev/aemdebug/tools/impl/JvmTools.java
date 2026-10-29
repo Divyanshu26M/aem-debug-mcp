@@ -1,5 +1,6 @@
 package dev.aemdebug.tools.impl;
 
+import dev.aemdebug.aem.AemInstance;
 import dev.aemdebug.jdi.BreakpointSpec;
 import dev.aemdebug.jdi.ExceptionWatchSpec;
 import dev.aemdebug.jdi.JdiEngine;
@@ -9,6 +10,7 @@ import dev.aemdebug.project.ProjectModel;
 import dev.aemdebug.server.Services;
 import dev.aemdebug.tools.ToolContext;
 import dev.aemdebug.tools.ToolException;
+import dev.aemdebug.util.Args;
 
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -22,26 +24,58 @@ final class JvmTools {
     static final List<String> DEFAULT_WATCH_PACKAGES =
             List.of("org.apache.sling.models", "org.apache.sling.scripting.sightly");
 
+    /** Suggested JDWP port for publish, next to the usual author port. */
+    static final int SUGGESTED_PUBLISH_PORT = 8768;
+
     private JvmTools() {
     }
 
-    static JdiEngine engine(Services s) {
-        if (s.jdi == null) {
+    /** The instance argument of the jvm_* tools (author by default). */
+    static AemInstance instance(Services s, Args args) {
+        return s.instances.resolve(args.str("instance"));
+    }
+
+    static JdiEngine engine(Services s, AemInstance instance) {
+        JdiEngine engine = s.jdi(instance.name());
+        if (engine == null) {
             throw new ToolException(JdiSupport.unavailableMessage());
         }
+        return engine;
+    }
+
+    /** Why the JVM of an instance cannot be reached over JDWP, or null when host and port are known. */
+    static String endpointProblem(Services s, AemInstance instance) {
         if (s.config.jdwpHost() == null) {
-            throw new ToolException("JVM debugging is disabled: AEM_JDWP_HOST is not a local host");
+            return "JVM debugging is disabled: AEM_JDWP_HOST is not a local host.";
         }
-        return s.jdi;
+        if (s.jdwpPort(instance.name()) < 0) {
+            return "No JDWP port is configured for " + instance.name() + ". Start " + instance.name()
+                    + " with -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=" + SUGGESTED_PUBLISH_PORT
+                    + " (a port of your choice, not the author's), then set AEM_PUBLISH_JDWP_PORT=" + SUGGESTED_PUBLISH_PORT
+                    + " in the MCP server environment or call jvm_connection action=attach instance=" + instance.name()
+                    + " port=" + SUGGESTED_PUBLISH_PORT + ".";
+        }
+        return null;
+    }
+
+    /** "publish 127.0.0.1:8768" or "publish (no JDWP port)". */
+    static String endpoint(Services s, AemInstance instance) {
+        int port = s.jdwpPort(instance.name());
+        return instance.name() + (port < 0 || s.config.jdwpHost() == null ? " (no JDWP port)"
+                : " " + s.config.jdwpHost() + ":" + port);
     }
 
     /** Attaches, retrying briefly: the JDWP agent re-opens its port a moment after a probe or a detach. */
-    static String attach(Services s, int timeoutMs) {
-        JdiEngine engine = engine(s);
+    static String attach(Services s, AemInstance instance, int timeoutMs) {
+        JdiEngine engine = engine(s, instance);
+        String problem = endpointProblem(s, instance);
+        if (problem != null) {
+            throw new ToolException(problem);
+        }
         ToolException last = null;
         for (int attempt = 1; attempt <= 3; attempt++) {
             try {
-                return engine.attach(s.config.jdwpHost(), s.config.jdwpPort(), timeoutMs);
+                return engine.attach(s.config.jdwpHost(), s.jdwpPort(instance.name()), timeoutMs);
             } catch (ToolException e) {
                 last = e;
                 if (attempt == 3 || !String.valueOf(e.getMessage()).contains("refused")) {
@@ -54,18 +88,19 @@ final class JvmTools {
     }
 
     /** Attaches if needed; returns a note (or null) instead of failing so definitions can still be made. */
-    static String ensureAttached(Services s, boolean failIfImpossible) {
-        JdiEngine engine = engine(s);
+    static String ensureAttached(Services s, AemInstance instance, boolean failIfImpossible) {
+        JdiEngine engine = engine(s, instance);
         if (engine.isAttached()) {
             return null;
         }
         try {
-            return attach(s, 5000);
+            return attach(s, instance, 5000);
         } catch (ToolException e) {
             if (failIfImpossible) {
                 throw e;
             }
-            return "Not attached: " + e.getMessage() + " The definition is kept and armed on the next attach.";
+            return "Not attached to the " + instance.name() + " JVM: " + e.getMessage()
+                    + " The definition is kept and armed on the next attach.";
         }
     }
 

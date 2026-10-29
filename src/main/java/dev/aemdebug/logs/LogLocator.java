@@ -16,7 +16,8 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Locates crx-quickstart/logs/error.log: AEM_LOG_DIR (author) or sling.home from the Sling Settings printer.
+ * Locates crx-quickstart/logs/error.log: AEM_LOG_DIR (author), AEM_PUBLISH_LOG_DIR (publish) or sling.home from the
+ * Sling Settings printer.
  */
 public final class LogLocator {
 
@@ -61,10 +62,12 @@ public final class LogLocator {
     }
 
     private Location detect(ToolContext context, AemInstance instance) {
-        if (instance.isAuthor() && config.logDir() != null) {
-            Path log = config.logDir().resolve("error.log");
-            return new Location(log, null, Files.isReadable(log) ? "from AEM_LOG_DIR"
-                    : "AEM_LOG_DIR is set but " + log + " is not readable");
+        String variable = instance.isAuthor() ? "AEM_LOG_DIR" : "AEM_PUBLISH_LOG_DIR";
+        Path dir = config.logDir(instance.name());
+        if (dir != null) {
+            Path log = dir.resolve("error.log");
+            return new Location(log, null, Files.isReadable(log) ? "from " + variable
+                    : variable + " is set but " + log + " is not readable");
         }
         String slingHome = null;
         try {
@@ -72,24 +75,25 @@ public final class LogLocator {
             slingHome = settings.slingHome;
         } catch (RuntimeException e) {
             LOG.debug("Sling settings not available: {}", e.getMessage());
-            return new Location(null, null, "sling.home unknown (" + e.getMessage() + "); set AEM_LOG_DIR");
+            return new Location(null, null, "sling.home unknown (" + e.getMessage() + "); set " + variable);
         }
         if (slingHome == null || slingHome.isBlank()) {
-            return new Location(null, null, "sling.home not reported; set AEM_LOG_DIR");
+            return new Location(null, null, "sling.home not reported; set " + variable);
         }
         Path home;
         try {
             home = Paths.get(slingHome);
         } catch (RuntimeException e) {
-            return new Location(null, slingHome, "sling.home is not a valid path; set AEM_LOG_DIR");
+            return new Location(null, slingHome, "sling.home is not a valid path; set " + variable);
         }
         if (!home.isAbsolute()) {
-            return new Location(null, slingHome, "sling.home is relative; set AEM_LOG_DIR to crx-quickstart/logs");
+            return new Location(null, slingHome, "sling.home is relative; set " + variable
+                    + " to crx-quickstart/logs");
         }
         Path log = home.resolve("logs").resolve("error.log");
         if (Files.isReadable(log)) {
             return new Location(log, slingHome, "from sling.home");
         }
-        return new Location(log, slingHome, log + " is not readable from this machine; set AEM_LOG_DIR");
+        return new Location(log, slingHome, log + " is not readable from this machine; set " + variable);
     }
 }

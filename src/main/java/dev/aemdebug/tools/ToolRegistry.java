@@ -67,6 +67,10 @@ public final class ToolRegistry {
         } catch (IllegalArgumentException e) {
             LOG.info("tool {} rejected arguments: {}", tool.name(), e.getMessage());
             return ToolResult.error("Invalid arguments: " + e.getMessage());
+        } catch (SecurityException e) {
+            LOG.info("tool {} refused: {}", tool.name(), e.getMessage());
+            return ToolResult.error(e.getMessage() + ". aem-debug-mcp only works with local hosts (localhost, "
+                    + "127.0.0.1, ::1).");
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return ToolResult.error("Interrupted");

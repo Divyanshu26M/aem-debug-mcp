@@ -32,6 +32,11 @@ browser render ──► component map ──► Sling Models / HTL / local sour
   Captured threads resume immediately.
 - **Correlate**: `debug_page` does all of the above in one call and groups the server-side events per browser
   request. The result is a Debug Report with hints, plus artifacts (HTML, screenshots, logs, RPT, snapshots).
+- **Publish and front-end dev servers**: debug publish pages, or pages of a local dev server (for example a
+  React app on `localhost:3000` that proxies API calls to publish). The browser side comes from the dev server;
+  the server side (error.log, Recent Requests, JVM) comes from the AEM instance behind it, matched by method and
+  path. A site's own visitor login, including an external identity provider, can be captured in a visible window
+  and used for renders.
 - **Is my change deployed?** `jvm_classes` compares the class running in AEM (bundle, revision, line table)
   with your local build.
 
@@ -61,9 +66,12 @@ task; it uses the debug tools, cannot change anything, and returns the cause wit
   change is journaled and reverted by `debug_cleanup`, after inactivity, when the server stops, or on the next
   start after a crash.
 - **Credentials never pass through the chat**: when AEM needs a login, a visible browser window opens on the
-  AEM login page (local admin or SSO). The session cookie is kept in memory only. The `AEM_USER` and
-  `AEM_PASSWORD` environment variables are an optional non-interactive fallback. Passwords are never logged,
-  written to disk or returned in tool output, and tool output masks secrets.
+  AEM login page of author or publish (local admin or SSO). The server keeps only the `login-token` cookie and
+  remembers it on this machine in an owner-only file, so a new chat does not ask again
+  (`AEM_DEBUG_REMEMBER_LOGINS=false` keeps it in memory only). A site visitor login (`aem_auth
+  action=site-login`) is kept in memory only. The `AEM_USER` and `AEM_PASSWORD` environment variables are an
+  optional non-interactive fallback. Passwords are never logged, written to disk or returned in tool output, and
+  tool output masks secrets.
 - **JDWP is exclusive**: AEM accepts one debugger at a time. The server attaches on demand and detaches on
   `jvm_connection action=detach`, on `debug_cleanup`, or after inactivity, so IntelliJ can reconnect. It
   never suspends the whole VM and never calls `VirtualMachine.exit`.
@@ -78,6 +86,9 @@ task; it uses the debug tools, cannot change anything, and returns the cause wit
   ```
   java -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=8767 -jar aem-sdk-author-p4502.jar -gui
   ```
+
+  Publish runs in its own JVM. For JVM capture on publish, start it with its own port (the plugin expects
+  `address=8768`); everything else works on publish without JDWP.
 
 ## Install
 
@@ -103,6 +114,12 @@ URLs, JDWP host/port, project directory, log directory, browser channel, idle ti
    new build is running, and a second `debug_page` verifies the fix.
 4. `debug_cleanup` detaches JDWP and reverts any debug toggles.
 
+On a front-end dev server: "the account page on localhost:3000 shows an error" → `debug_page
+path=http://localhost:3000/account instance=publish` (the instance is remembered for that dev server). The report
+shows the API calls that reached publish, with their error.log lines, Request Progress Tracker and, when publish
+runs with JDWP, exceptions at the throw site. If they answer 401/403, the agent opens `aem_auth action=site-login`
+so you can sign in as a site visitor, then renders again with that session.
+
 ## Build and test
 
 ```
@@ -120,8 +137,9 @@ The default build needs no network access and no running AEM.
 src/main/java/dev/aemdebug/
   server/     MCP wiring (stdio), composition root, cleanup coordinator, report resources
   tools/      tool framework; tools/impl = the 24 tools
-  aem/        local-only HTTP client, auth (login window / env fallback), Felix console, content reads
-  browser/    Playwright-based rendering, screenshots, login window
+  aem/        local-only HTTP client, auth (login window, remembered logins, env fallback), Felix console,
+              content reads, page targets (AEM instances and front-end dev servers)
+  browser/    Playwright-based rendering, screenshots, AEM and site login windows
   mapping/    DOM <-> component <-> model <-> source mapping
   jdi/        snapshot-first JDI engine (breakpoints, logpoints, exception watches, class versions)
   logs/ rpt/  error.log reader/parser, Request Progress Tracker parser, Recent Requests client
@@ -136,10 +154,14 @@ docs/         setup, tools, troubleshooting, spike findings
 
 ## Status and limits
 
-This is an MVP. Interactive suspend/step debugging and a companion OSGi bundle are planned for later phases.
-Some AEM console formats are implemented from documentation and parser fixtures and are still to be verified
-against a logged-in AEM. See [docs/spike-findings.md](docs/spike-findings.md) and
-[docs/troubleshooting.md](docs/troubleshooting.md).
+This is an MVP. Verified on a real local AEM author: the login window, `debug_page` (JDWP attach, temporary
+exception watch, component location, error.log lines matched to the page's own requests), `page_component_map`,
+`aem_page_context`, `component_inspect`, `page_render`, `aem_get_resource`, `aem_osgi_status`,
+`aem_get_osgi_config` and `aem_logs`. Not yet verified on a real page: `aem_debug_toggle`, breakpoint and
+exception snapshots in project code, linking components to local source files, `debug_capture`, `aem_query`,
+`aem_resolve`, `aem_recent_requests`, and the newer publish JVM capture and site login window. Interactive
+suspend/step debugging and a companion OSGi bundle are planned for later phases. See
+[docs/spike-findings.md](docs/spike-findings.md) and [docs/troubleshooting.md](docs/troubleshooting.md).
 
 ## License
 

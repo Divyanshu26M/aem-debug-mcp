@@ -1,5 +1,6 @@
 package dev.aemdebug.tools.impl;
 
+import dev.aemdebug.aem.AemInstance;
 import dev.aemdebug.jdi.ExceptionWatchSpec;
 import dev.aemdebug.jdi.JdiEngine;
 import dev.aemdebug.server.Services;
@@ -36,7 +37,8 @@ public final class JvmExceptionWatchTool extends AbstractTool {
                         .bool("uncaught", "Capture uncaught exceptions (default true)")
                         .str("request", "Request filter: URI substring, ^regex, or 'requests' for any request")
                         .integer("maxHits", "Captures before the watch disables itself (default 100)", 1, 1000)
-                        .str("id", "Watch id for action=remove, e.g. ex1"));
+                        .str("id", "Watch id for action=remove, e.g. ex1")
+                        .enumStr("instance", "JVM of author (default) or publish", "author", "publish"));
         this.s = services;
     }
 
@@ -47,17 +49,19 @@ public final class JvmExceptionWatchTool extends AbstractTool {
 
     @Override
     public ToolResult call(ToolContext context, Args args) {
-        JdiEngine engine = JvmTools.engine(s);
+        AemInstance instance = JvmTools.instance(s, args);
+        JdiEngine engine = JvmTools.engine(s, instance);
         String action = args.choice("action", "add", "add", "list", "remove", "clear");
         switch (action) {
             case "list":
-                return ToolResult.of(list(engine));
+                return ToolResult.of(list(instance, engine));
             case "remove": {
                 String id = args.requireStr("id").trim();
                 if (!engine.removeExceptionWatch(id)) {
-                    throw new ToolException("No exception watch " + id + ". " + list(engine));
+                    throw new ToolException("No exception watch " + id + " in the " + instance.name() + " JVM. "
+                            + list(instance, engine));
                 }
-                return ToolResult.of("Removed " + id + ".\n" + list(engine));
+                return ToolResult.of("Removed " + id + ".\n" + list(instance, engine));
             }
             case "clear": {
                 int removed = 0;
@@ -66,14 +70,15 @@ public final class JvmExceptionWatchTool extends AbstractTool {
                         removed++;
                     }
                 }
-                return ToolResult.of("Removed " + removed + (removed == 1 ? " exception watch." : " exception watches."));
+                return ToolResult.of("Removed " + removed + (removed == 1 ? " exception watch" : " exception watches")
+                        + " from the " + instance.name() + " JVM.");
             }
             default:
-                return add(context, args, engine);
+                return add(context, args, instance, engine);
         }
     }
 
-    private ToolResult add(ToolContext context, Args args, JdiEngine engine) {
+    private ToolResult add(ToolContext context, Args args, AemInstance instance, JdiEngine engine) {
         ExceptionWatchSpec spec = new ExceptionWatchSpec();
         List<String> packages = JvmTools.strings(args.strList("packages"));
         boolean defaults = packages.isEmpty();
@@ -89,25 +94,27 @@ public final class JvmExceptionWatchTool extends AbstractTool {
         }
         spec.requestFilter = JvmTools.blankToNull(args.str("request"));
         spec.maxHits = args.integer("maxHits", spec.maxHits, 1, 1000);
-        String attach = JvmTools.ensureAttached(s, false);
+        String attach = JvmTools.ensureAttached(s, instance, false);
         engine.addExceptionWatch(spec);
 
         StringBuilder out = new StringBuilder();
         if (attach != null) {
             out.append(attach).append('\n');
         }
-        out.append("Exception watch ").append(spec.id).append(" added: ").append(spec.describe()).append('\n');
+        out.append("Exception watch ").append(spec.id).append(" added to the ").append(instance.name())
+                .append(" JVM: ").append(spec.describe()).append('\n');
         if (defaults) {
             out.append("Default scope = local project packages + Sling Models + HTL; pass packages to change it.\n");
         }
-        out.append("Next: reproduce, then jvm_snapshots source=").append(spec.id).append(" (or kind=exception).\n");
+        out.append("Next: reproduce, then jvm_snapshots source=").append(spec.id)
+                .append(instance.isAuthor() ? "" : " instance=" + instance.name()).append(" (or kind=exception).\n");
         return ToolResult.of(out.toString());
     }
 
-    static String list(JdiEngine engine) {
+    static String list(AemInstance instance, JdiEngine engine) {
         StringBuilder sb = new StringBuilder();
-        sb.append(engine.isAttached() ? "Attached to " + engine.endpoint() + "."
-                : "Not attached; watches are armed on attach.").append('\n');
+        sb.append(engine.isAttached() ? "Attached to the " + instance.name() + " JVM at " + engine.endpoint() + "."
+                : "Not attached to the " + instance.name() + " JVM; watches are armed on attach.").append('\n');
         List<ExceptionWatchSpec> specs = engine.watchList();
         if (specs.isEmpty()) {
             sb.append("No exception watches.\n");

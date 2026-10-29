@@ -5,6 +5,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -17,7 +18,11 @@ import java.util.Map;
  * AEM_PUBLISH_URL                default http://localhost:4503
  * AEM_JDWP_HOST / AEM_JDWP_PORT  default 127.0.0.1 / 8767
  * AEM_PROJECT_DIR                a local AEM project folder (more via project_index, see ProjectIndexService)
+ * AEM_PUBLISH_JDWP_PORT          JDWP port of publish (none by default: no JVM capture on publish)
  * AEM_LOG_DIR                    crx-quickstart/logs (else detected from sling.home)
+ * AEM_PUBLISH_LOG_DIR            the same for publish
+ * AEM_DEV_SERVERS                local front-end dev servers and the AEM they proxy to, e.g. http://localhost:3000=publish
+ * AEM_DEBUG_REMEMBER_LOGINS      keep AEM logins on disk for later chats, owner-only (default true)
  * AEM_USER / AEM_PASSWORD        non-interactive login fallback (never logged or returned)
  * AEM_DEBUG_BROWSER_CHANNEL      msedge | chrome | chromium (default: auto)
  * AEM_DEBUG_ARTIFACTS_DIR        default PLUGIN_DATA or %TEMP%/aem-debug-mcp
@@ -37,13 +42,17 @@ public final class Config {
     private final URI publishUrl;
     private final String jdwpHost;
     private final int jdwpPort;
+    private final int publishJdwpPort;
     private final Path projectDir;
     private final Path logDir;
+    private final Path publishLogDir;
     private final String user;
     private final String password;
     private final String browserChannel;
     private final Path artifactsDir;
     private final List<String> projectPackages;
+    private final Map<String, String> devServers;
+    private final boolean rememberLogins;
     private final int idleDetachMinutes;
     private final int loginWaitSeconds;
     private final List<String> problems;
@@ -53,13 +62,17 @@ public final class Config {
         this.publishUrl = b.publishUrl;
         this.jdwpHost = b.jdwpHost;
         this.jdwpPort = b.jdwpPort;
+        this.publishJdwpPort = b.publishJdwpPort;
         this.projectDir = b.projectDir;
         this.logDir = b.logDir;
+        this.publishLogDir = b.publishLogDir;
         this.user = b.user;
         this.password = b.password;
         this.browserChannel = b.browserChannel;
         this.artifactsDir = b.artifactsDir;
         this.projectPackages = Collections.unmodifiableList(new ArrayList<>(b.projectPackages));
+        this.devServers = Collections.unmodifiableMap(new LinkedHashMap<>(b.devServers));
+        this.rememberLogins = b.rememberLogins;
         this.idleDetachMinutes = b.idleDetachMinutes;
         this.loginWaitSeconds = b.loginWaitSeconds;
         this.problems = Collections.unmodifiableList(new ArrayList<>(b.problems));
@@ -79,9 +92,11 @@ public final class Config {
             b.jdwpHost = null;
         }
         b.jdwpPort = intValue(env, "AEM_JDWP_PORT", DEFAULT_JDWP_PORT, 1, 65535, b.problems);
+        b.publishJdwpPort = intValue(env, "AEM_PUBLISH_JDWP_PORT", -1, 1, 65535, b.problems);
 
         b.projectDir = pathValue(env, "AEM_PROJECT_DIR");
         b.logDir = pathValue(env, "AEM_LOG_DIR");
+        b.publishLogDir = pathValue(env, "AEM_PUBLISH_LOG_DIR");
         b.user = value(env, "AEM_USER", null);
         b.password = env.get("AEM_PASSWORD");
         if (b.password != null && b.password.isEmpty()) {
@@ -118,7 +133,34 @@ public final class Config {
         }
         b.idleDetachMinutes = intValue(env, "AEM_DEBUG_IDLE_DETACH_MINUTES", 15, 0, 24 * 60, b.problems);
         b.loginWaitSeconds = intValue(env, "AEM_DEBUG_LOGIN_WAIT_SECONDS", 60, 0, 600, b.problems);
+        String remember = value(env, "AEM_DEBUG_REMEMBER_LOGINS", "true").toLowerCase(Locale.ROOT);
+        b.rememberLogins = !(remember.equals("false") || remember.equals("no") || remember.equals("0"));
+        String devServers = value(env, "AEM_DEV_SERVERS", null);
+        if (devServers != null) {
+            parseDevServers(devServers, b);
+        }
         return new Config(b);
+    }
+
+    /** "http://localhost:3000=publish, http://localhost:8080=author" -> origin to instance name. */
+    static void parseDevServers(String value, Builder b) {
+        for (String entry : value.split("[,;\\s]+")) {
+            if (entry.isBlank()) {
+                continue;
+            }
+            int eq = entry.lastIndexOf('=');
+            String instance = eq < 0 ? "" : entry.substring(eq + 1).trim().toLowerCase(Locale.ROOT);
+            if (eq <= 0 || !(instance.equals("author") || instance.equals("publish"))) {
+                b.problems.add("AEM_DEV_SERVERS entry '" + entry + "' must look like http://localhost:3000=publish");
+                continue;
+            }
+            try {
+                URI uri = HostPolicy.requireLocalBaseUrl(entry.substring(0, eq), "AEM_DEV_SERVERS");
+                b.devServers.put(HostPolicy.originKey(uri), instance);
+            } catch (IllegalArgumentException e) {
+                b.problems.add(e.getMessage());
+            }
+        }
     }
 
     private static URI parseUrl(Map<String, String> env, String name, String defaultValue, List<String> problems) {
@@ -186,12 +228,32 @@ public final class Config {
         return jdwpPort;
     }
 
+    /** JDWP port of an instance ("author" or "publish"); -1 when none is configured. */
+    public int jdwpPort(String instance) {
+        return "publish".equals(instance) ? publishJdwpPort : jdwpPort;
+    }
+
     public Path projectDir() {
         return projectDir;
     }
 
     public Path logDir() {
         return logDir;
+    }
+
+    /** Folder of error.log for an instance ("author" or "publish"), or null to detect it from sling.home. */
+    public Path logDir(String instance) {
+        return "publish".equals(instance) ? publishLogDir : logDir;
+    }
+
+    /** Local front-end dev servers from AEM_DEV_SERVERS: normalized origin to instance name. */
+    public Map<String, String> devServers() {
+        return devServers;
+    }
+
+    /** Whether AEM login sessions are kept on disk (owner-only) for later chats. */
+    public boolean rememberLogins() {
+        return rememberLogins;
     }
 
     public String user() {
@@ -234,7 +296,10 @@ public final class Config {
     @Override
     public String toString() {
         return "Config{author=" + authorUrl + ", publish=" + publishUrl + ", jdwp=" + jdwpHost + ":" + jdwpPort
-                + ", projectDir=" + projectDir + ", logDir=" + logDir + ", user=" + (user == null ? "-" : user)
+                + ", publishJdwp=" + (publishJdwpPort < 0 ? "-" : String.valueOf(publishJdwpPort))
+                + ", projectDir=" + projectDir + ", logDir=" + logDir + ", publishLogDir=" + publishLogDir
+                + ", devServers=" + devServers + ", rememberLogins=" + rememberLogins
+                + ", user=" + (user == null ? "-" : user)
                 + ", password=" + (password == null ? "-" : "****") + ", browserChannel="
                 + (browserChannel == null ? "auto" : browserChannel) + ", artifactsDir=" + artifactsDir
                 + ", projectPackages=" + projectPackages + ", idleDetachMinutes=" + idleDetachMinutes + "}";
@@ -247,9 +312,11 @@ public final class Config {
         b.publishUrl = URI.create(DEFAULT_PUBLISH_URL);
         b.jdwpHost = DEFAULT_JDWP_HOST;
         b.jdwpPort = DEFAULT_JDWP_PORT;
+        b.publishJdwpPort = -1;
         b.artifactsDir = Paths.get(System.getProperty("java.io.tmpdir"), "aem-debug-mcp-test");
         b.idleDetachMinutes = 15;
         b.loginWaitSeconds = 0;
+        b.rememberLogins = false;
         return b;
     }
 
@@ -258,13 +325,17 @@ public final class Config {
         private URI publishUrl;
         private String jdwpHost;
         private int jdwpPort;
+        private int publishJdwpPort = -1;
         private Path projectDir;
         private Path logDir;
+        private Path publishLogDir;
         private String user;
         private String password;
         private String browserChannel;
         private Path artifactsDir;
         private final List<String> projectPackages = new ArrayList<>();
+        private final Map<String, String> devServers = new LinkedHashMap<>();
+        private boolean rememberLogins = true;
         private int idleDetachMinutes;
         private int loginWaitSeconds;
         private final List<String> problems = new ArrayList<>();
@@ -285,6 +356,11 @@ public final class Config {
             return this;
         }
 
+        public Builder publishJdwpPort(int port) {
+            this.publishJdwpPort = port;
+            return this;
+        }
+
         public Builder projectDir(Path dir) {
             this.projectDir = dir;
             return this;
@@ -292,6 +368,21 @@ public final class Config {
 
         public Builder logDir(Path dir) {
             this.logDir = dir;
+            return this;
+        }
+
+        public Builder publishLogDir(Path dir) {
+            this.publishLogDir = dir;
+            return this;
+        }
+
+        public Builder devServer(String url, String instance) {
+            this.devServers.put(HostPolicy.originKey(HostPolicy.requireLocalBaseUrl(url, "devServer")), instance);
+            return this;
+        }
+
+        public Builder rememberLogins(boolean value) {
+            this.rememberLogins = value;
             return this;
         }
 

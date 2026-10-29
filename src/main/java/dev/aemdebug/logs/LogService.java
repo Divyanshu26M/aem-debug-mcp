@@ -211,6 +211,7 @@ public final class LogService {
             }
         }
         throw new ToolException("error.log is not readable on this machine and the Sling log tailer "
-                + "(/system/console/slinglog/tailer.txt) did not answer. Set AEM_LOG_DIR to crx-quickstart/logs.");
+                + "(/system/console/slinglog/tailer.txt) did not answer. Set "
+                + (instance.isAuthor() ? "AEM_LOG_DIR" : "AEM_PUBLISH_LOG_DIR") + " to crx-quickstart/logs.");
     }
 }

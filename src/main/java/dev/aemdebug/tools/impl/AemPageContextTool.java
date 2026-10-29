@@ -2,10 +2,12 @@ package dev.aemdebug.tools.impl;
 
 import dev.aemdebug.aem.AemInstance;
 import dev.aemdebug.aem.ContentService;
+import dev.aemdebug.aem.PageTarget;
 import dev.aemdebug.aem.ResourceTree;
 import dev.aemdebug.server.Services;
 import dev.aemdebug.tools.AbstractTool;
 import dev.aemdebug.tools.ToolContext;
+import dev.aemdebug.tools.ToolException;
 import dev.aemdebug.tools.ToolResult;
 import dev.aemdebug.util.Args;
 import dev.aemdebug.util.Json;
@@ -26,17 +28,23 @@ public final class AemPageContextTool extends AbstractTool {
                         + "available CA configs), language, and replication status. Use it for policy/style-system "
                         + "issues and 'works on one site but not another' problems. Read-only.",
                 Schema.object()
-                        .requiredStr("path", "Page path or URL, e.g. /content/wknd/us/en (page editor URLs work too)")
+                        .requiredStr("path", "Page path or local URL, e.g. /content/wknd/us/en (page editor and "
+                                + "publish URLs work too)")
                         .str("component", "Optional component path inside the page to resolve its policy")
-                        .enumStr("instance", "author (default) or publish", "author", "publish"));
+                        .enumStr("instance", "author (default) or publish; a URL of an instance selects it", "author",
+                                "publish"));
         this.s = services;
     }
 
     @Override
     public ToolResult call(ToolContext context, Args args) {
-        AemInstance instance = s.instances.resolve(args.str("instance"));
-        ContentService.PageContext pc = s.content.pageContext(context, instance, args.requireStr("path"),
-                args.str("component"));
+        PageTarget target = s.pageTargets.resolve(args.requireStr("path"), args.str("instance"));
+        AemInstance instance = target.instance();
+        String pagePath = PageComponentMapTool.pagePath(target);
+        if (pagePath == null) {
+            throw new ToolException(target.renderUrl() + " is not an AEM page under /content.");
+        }
+        ContentService.PageContext pc = s.content.pageContext(context, instance, pagePath, args.str("component"));
         Map<String, Object> p = pc.pageProperties;
         StringBuilder out = new StringBuilder("### Page context ").append(pc.pagePath).append(" (")
                 .append(instance.name()).append(")\n");

@@ -7,9 +7,9 @@ import dev.aemdebug.aem.AemUnavailableException;
 import dev.aemdebug.aem.AuthManager;
 import dev.aemdebug.aem.AuthPendingException;
 import dev.aemdebug.aem.BundleInfo;
+import dev.aemdebug.aem.DevServers;
 import dev.aemdebug.aem.RequestOptions;
 import dev.aemdebug.aem.SlingSettings;
-import dev.aemdebug.jdi.JdwpPortProbe;
 import dev.aemdebug.logs.LogLocator;
 import dev.aemdebug.project.ProjectIndex;
 import dev.aemdebug.project.ProjectIndexService;
@@ -25,6 +25,7 @@ import java.nio.file.Files;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /** aem_status: setup check for local debugging. */
 public final class AemStatusTool extends AbstractTool {
@@ -35,8 +36,9 @@ public final class AemStatusTool extends AbstractTool {
         super("aem_status", "AEM debug status",
                 "Checks the local AEM debugging setup: reachability of author/publish, authentication state, AEM "
                         + "version, run modes, sling.home and error.log location, bundle health, the local AEM project "
-                        + "in use (and, when logged in, whether its bundles are installed), and whether the JDWP debug "
-                        + "port is free or held by another debugger (e.g. IntelliJ). Call this first, after project_index "
+                        + "in use (and, when logged in, whether its bundles are installed), known front-end dev servers, "
+                        + "the site visitor session, and whether the JDWP debug port of each instance is free or held "
+                        + "by another debugger (e.g. IntelliJ). Call this first, after project_index "
                         + "workspace=<your working folder>. Read-only; it only opens the AEM login window when login=true.",
                 Schema.object()
                         .enumStr("instance", "Instance to check (default all configured)", "author", "publish", "all")
@@ -77,10 +79,29 @@ public final class AemStatusTool extends AbstractTool {
         if (project != null) {
             out.append("- index: ").append(project.summary()).append('\n');
         }
+        out.append(devServers());
+        out.append("\n### Site session\n- ").append(AemAuthTool.siteSessionLine(s.browser.siteSessionSnapshot()))
+                .append('\n');
         if (checkJdwp) {
-            out.append(StatusSections.jdwp(s));
+            out.append(StatusSections.jdwp(s, selected));
         }
         return ToolResult.of(out.toString());
+    }
+
+    private String devServers() {
+        StringBuilder sb = new StringBuilder("\n### Front-end dev servers\n");
+        Map<String, DevServers.Mapping> all = s.devServers.all();
+        if (all.isEmpty()) {
+            sb.append("- none known. Pass a dev-server URL (e.g. http://localhost:3000/...) as path to page_render or "
+                    + "debug_page with instance=publish or instance=author (the AEM it proxies to); the mapping is "
+                    + "remembered. AEM_DEV_SERVERS configures it up front.\n");
+            return sb.toString();
+        }
+        for (Map.Entry<String, DevServers.Mapping> entry : all.entrySet()) {
+            sb.append("- ").append(entry.getKey()).append(" -> ").append(entry.getValue().instance).append(" (")
+                    .append(entry.getValue().source).append(")\n");
+        }
+        return sb.toString();
     }
 
     private String instanceStatus(ToolContext context, AemInstance instance, boolean login,

@@ -2,7 +2,7 @@ package dev.aemdebug.tools.impl;
 
 import dev.aemdebug.aem.AemInstance;
 import dev.aemdebug.aem.ContentService;
-import dev.aemdebug.aem.PageUrls;
+import dev.aemdebug.aem.PageTarget;
 import dev.aemdebug.browser.RenderReport;
 import dev.aemdebug.browser.RenderRequest;
 import dev.aemdebug.mapping.ComponentMapper;
@@ -11,6 +11,7 @@ import dev.aemdebug.mapping.ComponentReport;
 import dev.aemdebug.server.Services;
 import dev.aemdebug.tools.AbstractTool;
 import dev.aemdebug.tools.ToolContext;
+import dev.aemdebug.tools.ToolException;
 import dev.aemdebug.tools.ToolResult;
 import dev.aemdebug.util.Args;
 import dev.aemdebug.util.Json;
@@ -40,9 +41,14 @@ public final class PageComponentMapTool extends AbstractTool {
 
     @Override
     public ToolResult call(ToolContext context, Args args) {
-        AemInstance instance = s.instances.resolve(args.str("instance"));
-        RenderRequest request = PageRenderTool.buildRequest(s, context, args, instance).fullPage(true);
-        String pagePath = ContentService.pagePathOf(PageUrls.toRequestPath(args.requireStr("path")));
+        PageTarget target = PageRenderTool.target(s, args);
+        AemInstance instance = target.instance();
+        String pagePath = pagePath(target);
+        if (pagePath == null) {
+            throw new ToolException(target.renderUrl() + " is not an AEM page under /content, so there are no "
+                    + "components to map. Use page_render or debug_page for it.");
+        }
+        RenderRequest request = PageRenderTool.buildRequest(s, context, args, target).fullPage(true);
         ComponentMapper.Result result = s.mapper.mapAndRender(context, instance, pagePath, request);
         String reportId = s.artifacts.newReport();
         Map<String, String> saved = RenderReport.saveArtifacts(s.artifacts, reportId, result.render);
@@ -59,7 +65,12 @@ public final class PageComponentMapTool extends AbstractTool {
         }
 
         StringBuilder out = new StringBuilder("## Component map ").append(reportId).append("  ").append(pagePath)
-                .append(" (").append(instance.name()).append(", HTTP ").append(result.render.status()).append(")\n");
+                .append(" (").append(target.describe()).append(", HTTP ").append(result.render.status()).append(")\n");
+        out.append("Session: ").append(request.sessionNote()).append('\n');
+        if (target.devServer()) {
+            out.append("Loaded from the dev server: components are only located when it proxies this page itself to "
+                    + target.instance().name() + " (many dev servers answer page URLs with their own app shell).\n");
+        }
         out.append(ComponentReport.sources(result));
         out.append(ComponentReport.table(result, args.integer("maxRows", 60, 5, 500), args.bool("onlyProblems", false)));
         out.append(RenderReport.artifactsBlock(s.artifacts, reportId, saved));
@@ -71,5 +82,10 @@ public final class PageComponentMapTool extends AbstractTool {
             }
         }
         return toolResult;
+    }
+
+    /** AEM page path of a target: any path on an AEM instance (as before), only /content pages behind a dev server. */
+    static String pagePath(PageTarget target) {
+        return target.devServer() ? target.pagePath() : ContentService.pagePathOf(target.requestPath());
     }
 }

@@ -9,8 +9,8 @@ files under the artifacts directory.
 
 | Tool | What it does |
 |---|---|
-| `aem_status` | Setup check: author/publish reachability, login state, AEM version, run modes, sling.home and error.log location, bundle health, and whether the JDWP port is free or held by another debugger. Call it first. |
-| `aem_auth` | `status`, `login` (opens a visible browser window on the AEM login page; local admin or SSO; the session cookie stays in memory) and `logout`. |
+| `aem_status` | Setup check: author/publish reachability, login state, AEM version, run modes, sling.home and error.log location, bundle health, known front-end dev servers, the site session, and whether each instance's JDWP port is free or held by another debugger. Call it first. |
+| `aem_auth` | `status`, `login` (opens a visible browser window on the AEM login page of author or publish; local admin or SSO; the login token is remembered for later chats in an owner-only file) and `logout`. `site-login` opens a visible window on a local site page for the site's own visitor login (external identity providers work); the captured cookies and storage of local origins stay in memory and are used by renders of publish and dev-server pages. `site-logout` forgets them. |
 
 ## Content and configuration (read-only)
 
@@ -22,7 +22,7 @@ files under the artifacts directory.
 | `aem_page_context` | Template, content policy of a component, context-aware configuration and language of a page. |
 | `aem_get_osgi_config` | Effective OSGi configuration of a PID (including factory configurations), plus the matching config files in the local project. |
 | `aem_osgi_status` | Bundles, Declarative Services components and registered Sling Models that are not healthy, filterable by name or package. |
-| `aem_resolve` | Which script or servlet handles a URL (Sling servlet resolver). |
+| `aem_resolve` | Which script or servlet handles a URL (Sling servlet resolver). A URL of an instance selects that instance. |
 
 ## Logs and requests
 
@@ -34,9 +34,15 @@ files under the artifacts directory.
 
 ## Rendering and components
 
+The page tools take a page path with `instance=author|publish`, or a local URL. A URL of an AEM instance selects
+that instance. Any other local origin is a front-end dev server: the page is rendered exactly as given and
+debugged on the AEM instance it proxies to (`instance=` the first time; remembered). `session` chooses who the
+browser is: `auto` (author: the AEM login; publish and dev servers: the site session if one was captured, else
+anonymous), `aem`, `site` or `none`. A render never mixes two identities.
+
 | Tool | What it does |
 |---|---|
-| `page_render` | Headless render (installed Edge/Chrome) with a screenshot, HTTP status, timings, failed requests and console errors. Author pages use `wcmmode=disabled` by default. |
+| `page_render` | Headless render (installed Edge/Chrome) with a screenshot, HTTP status, timings, failed requests and console errors. Author pages use `wcmmode=disabled` by default. When local requests of a publish or dev-server page are refused (401/403), it suggests the site login. |
 | `page_component_map` | Maps the rendered page to components: numbered boxes (#n) on the screenshot, empty components, Sling Models and local model/HTL files. |
 | `component_inspect` | One component in depth: JCR properties vs model JSON vs model fields, HTL script, policy, HTML fragment, cropped screenshot and related log lines. |
 | `project_index` | Finds and indexes the local AEM project(s): modules, Sling Models (injections, resource types), components, HTL scripts and their use-objects, servlets, OSGi config files, client libraries. `workspace=<folder>` uses the chat's folder; `projectDir=<folder>` adds a project and remembers it for this AEM (`replace`, `remove` manage the list). Aggregator repositories and several repositories are supported. When logged in, it shows which projects' bundles are installed. |
@@ -48,9 +54,13 @@ The server attaches on demand and detaches after `jvm_connection action=detach`,
 after inactivity. Breakpoints never pause AEM: the hit thread is held only while its stack, locals and `this`
 are recorded, then resumed.
 
+Author and publish are separate JVMs. Every `jvm_*` tool takes `instance` (default author); breakpoints, watches
+and snapshots belong to that instance's JVM. Publish needs its own JDWP port (`AEM_PUBLISH_JDWP_PORT`, or
+`jvm_connection port=` for the current chat).
+
 | Tool | What it does |
 |---|---|
-| `jvm_connection` | `attach`, `detach` or `status` of the JDWP connection (`AEM_JDWP_HOST`:`AEM_JDWP_PORT`, default 127.0.0.1:8767). |
+| `jvm_connection` | `attach`, `detach` or `status` of the JDWP connection of an instance (author: `AEM_JDWP_HOST`:`AEM_JDWP_PORT`, default 127.0.0.1:8767; publish: `AEM_PUBLISH_JDWP_PORT`). `port` overrides the port for the current chat. |
 | `jvm_breakpoint` | Snapshot breakpoints and logpoints. Location: `com.mysite.Foo:41`, `Foo.java:41` (resolved through the local project) or `com.mysite.Foo#method`. Options: `condition` (`title == null && count > 2`; operators `== != < > contains startsWith endsWith matches && || !`), `log` (logpoint message, e.g. `title={title}`), `request` (URI text, `^regex`, or `requests` for any request), `maxHits` (default 50, then the breakpoint disables itself). Breakpoints are re-armed when a bundle is redeployed. |
 | `jvm_exception_watch` | Captures exceptions at the throw site, including caught and swallowed ones, with stack, locals and the Sling request. Default scope: the project's packages plus `org.apache.sling.models` and `org.apache.sling.scripting.sightly`. |
 | `jvm_snapshots` | Lists (filter by source, request, kind or age), shows (`get`), expands objects from (`expand`) and clears captured snapshots. |
@@ -64,7 +74,7 @@ timeout to render values.
 
 | Tool | What it does |
 |---|---|
-| `debug_page` | Render + component map + server-side capture in one call. It arms a temporary exception watch (and optional `breakpoints`, for example `"HeroModel.java:41 if title == null"`), marks error.log and the Recent Requests console, renders the page, and matches exceptions, snapshots, log lines and RPT entries to the browser's requests via the Sling request thread name. Returns a Debug Report with hints, an annotated screenshot and artifacts (`page.html`, screenshots, `components.json`, `error-log.txt`, `rpt.txt`, `snapshots.json`, `report.md`). |
+| `debug_page` | Render + component map + server-side capture in one call. It arms a temporary exception watch (and optional `breakpoints`, for example `"HeroModel.java:41 if title == null"`), marks error.log and the Recent Requests console, renders the page, and matches exceptions, snapshots, log lines and RPT entries to the browser's requests via the Sling request thread name. Returns a Debug Report with hints, an annotated screenshot and artifacts (`page.html`, screenshots, `components.json`, `error-log.txt`, `rpt.txt`, `snapshots.json`, `report.md`). For a dev-server page the server side comes from the instance behind it and a "Dev server" section lists the requests that reached AEM; components are mapped only with `components=true`. |
 | `debug_capture` | `start` / `stop` / `status`: the same server-side capture while the user reproduces a problem in their own browser or the author UI; `stop` groups everything per Sling request. |
 | `debug_cleanup` | Ends the session: stops a running capture, removes breakpoints and watches, detaches JDWP, reverts debug toggles and closes the headless browser. |
 
@@ -77,3 +87,6 @@ time within 5 seconds (browser and AEM share the local clock). Request Progress 
 time, so they are matched by method, path and order. Events from other clients and from the server's own reads
 (for example the edit-mode render used for component mapping) are listed separately. Events from background
 threads go to "Not on a request thread".
+
+Matching uses method and path only, not the host, so requests a front-end dev server proxies to AEM unchanged
+match the AEM instance's request threads. A proxy that rewrites paths prevents the match.

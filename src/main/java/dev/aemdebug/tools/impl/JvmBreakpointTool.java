@@ -1,5 +1,6 @@
 package dev.aemdebug.tools.impl;
 
+import dev.aemdebug.aem.AemInstance;
 import dev.aemdebug.jdi.BreakpointSpec;
 import dev.aemdebug.jdi.Condition;
 import dev.aemdebug.jdi.JdiEngine;
@@ -43,7 +44,8 @@ public final class JvmBreakpointTool extends AbstractTool {
                         .integer("frames", "Stack frames recorded (default 12)", 1, 100)
                         .integer("localsFrames", "Frames whose locals are captured (default 1)", 1, 10)
                         .integer("depth", "Object rendering depth (default 2)", 0, 4)
-                        .str("id", "Breakpoint id for action=remove, e.g. bp2"));
+                        .str("id", "Breakpoint id for action=remove, e.g. bp2")
+                        .enumStr("instance", "JVM of author (default) or publish", "author", "publish"));
         this.s = services;
     }
 
@@ -54,18 +56,20 @@ public final class JvmBreakpointTool extends AbstractTool {
 
     @Override
     public ToolResult call(ToolContext context, Args args) {
-        JdiEngine engine = JvmTools.engine(s);
+        AemInstance instance = JvmTools.instance(s, args);
+        JdiEngine engine = JvmTools.engine(s, instance);
         String action = args.choice("action", args.has("location") ? "set" : "list",
                 "set", "list", "remove", "clear");
         switch (action) {
             case "set":
-                return set(context, args, engine);
+                return set(context, args, instance, engine);
             case "remove": {
                 String id = args.requireStr("id").trim();
                 if (!engine.removeBreakpoint(id)) {
-                    throw new ToolException("No breakpoint " + id + ". " + list(engine));
+                    throw new ToolException("No breakpoint " + id + " in the " + instance.name() + " JVM. "
+                            + list(instance, engine));
                 }
-                return ToolResult.of("Removed " + id + ".\n" + list(engine));
+                return ToolResult.of("Removed " + id + ".\n" + list(instance, engine));
             }
             case "clear": {
                 int removed = 0;
@@ -74,14 +78,15 @@ public final class JvmBreakpointTool extends AbstractTool {
                         removed++;
                     }
                 }
-                return ToolResult.of("Removed " + Text.plural(removed, "breakpoint") + ".");
+                return ToolResult.of("Removed " + Text.plural(removed, "breakpoint") + " from the " + instance.name()
+                        + " JVM.");
             }
             default:
-                return ToolResult.of(list(engine));
+                return ToolResult.of(list(instance, engine));
         }
     }
 
-    private ToolResult set(ToolContext context, Args args, JdiEngine engine) {
+    private ToolResult set(ToolContext context, Args args, AemInstance instance, JdiEngine engine) {
         BreakpointSpec spec;
         try {
             spec = BreakpointSpec.parse(args.requireStr("location"));
@@ -103,15 +108,15 @@ public final class JvmBreakpointTool extends AbstractTool {
         spec.localsFrames = args.integer("localsFrames", spec.localsFrames, 1, 10);
         spec.depth = args.integer("depth", spec.depth, 0, 4);
         String resolution = JvmTools.resolveLocation(s, context, spec);
-        String attach = JvmTools.ensureAttached(s, false);
+        String attach = JvmTools.ensureAttached(s, instance, false);
         engine.addBreakpoint(spec);
 
         StringBuilder out = new StringBuilder();
         if (attach != null) {
             out.append(attach).append('\n');
         }
-        out.append(spec.isLogpoint() ? "Logpoint " : "Breakpoint ").append(spec.id).append(" set: ")
-                .append(spec.describe()).append('\n');
+        out.append(spec.isLogpoint() ? "Logpoint " : "Breakpoint ").append(spec.id).append(" set in the ")
+                .append(instance.name()).append(" JVM: ").append(spec.describe()).append('\n');
         if (resolution != null) {
             out.append("Location: ").append(resolution).append('\n');
         }
@@ -120,14 +125,14 @@ public final class JvmBreakpointTool extends AbstractTool {
                     + "never arms, check the class name and that its bundle is active (aem_osgi_status).\n");
         }
         out.append("Next: reproduce (debug_page path=... or let the user open the page), then jvm_snapshots source=")
-                .append(spec.id).append(".\n");
+                .append(spec.id).append(instance.isAuthor() ? "" : " instance=" + instance.name()).append(".\n");
         return ToolResult.of(out.toString());
     }
 
-    static String list(JdiEngine engine) {
+    static String list(AemInstance instance, JdiEngine engine) {
         StringBuilder sb = new StringBuilder();
-        sb.append(engine.isAttached() ? "Attached to " + engine.endpoint() + "."
-                : "Not attached; breakpoints are armed on attach.").append('\n');
+        sb.append(engine.isAttached() ? "Attached to the " + instance.name() + " JVM at " + engine.endpoint() + "."
+                : "Not attached to the " + instance.name() + " JVM; breakpoints are armed on attach.").append('\n');
         List<BreakpointSpec> specs = engine.breakpointList();
         if (specs.isEmpty()) {
             sb.append("No breakpoints.\n");

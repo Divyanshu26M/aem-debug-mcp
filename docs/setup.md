@@ -14,6 +14,10 @@
 
   On JDK 9+ `address=8767` listens on localhost only, which is what you want.
 
+  Publish is a separate JVM. To capture exceptions and snapshots on publish too, start it with its own port, for
+  example `address=8768` (the plugin's `mcp.json` sets `AEM_PUBLISH_JDWP_PORT=8768`). Rendering, logs, content
+  reads and the Recent Requests console work on publish without JDWP.
+
 ## Build
 
 ```
@@ -115,12 +119,16 @@ All settings are environment variables of the MCP server process and are optiona
 |---|---|---|
 | `AEM_AUTHOR_URL` | `http://localhost:4502` | Author instance (must be localhost/127.0.0.1/::1) |
 | `AEM_PUBLISH_URL` | `http://localhost:4503` | Publish instance |
-| `AEM_JDWP_HOST` / `AEM_JDWP_PORT` | `127.0.0.1` / `8767` | JDWP endpoint of AEM (local only) |
+| `AEM_JDWP_HOST` / `AEM_JDWP_PORT` | `127.0.0.1` / `8767` | JDWP endpoint of author (local only) |
+| `AEM_PUBLISH_JDWP_PORT` | none (plugin: `8768`) | JDWP port of publish; without it there is no JVM capture on publish |
 | `AEM_PROJECT_DIR` | - | A local AEM project folder for source mapping (see [Local project](#local-project)) |
-| `AEM_LOG_DIR` | `<sling.home>/logs` | Where `error.log` is read from |
+| `AEM_LOG_DIR` | `<sling.home>/logs` | Where author's `error.log` is read from |
+| `AEM_PUBLISH_LOG_DIR` | `<sling.home>/logs` | Where publish's `error.log` is read from |
+| `AEM_DEV_SERVERS` | - | Front-end dev servers and the instance they proxy to, e.g. `http://localhost:3000=publish` (comma-separated; see [Publish and front-end dev servers](#publish-and-front-end-dev-servers)) |
 | `AEM_USER` / `AEM_PASSWORD` | - | Non-interactive login fallback (never logged or returned) |
+| `AEM_DEBUG_REMEMBER_LOGINS` | `true` | Remember AEM login tokens for later chats in an owner-only file; `false` = memory only |
 | `AEM_DEBUG_BROWSER_CHANNEL` | auto (`msedge` on Windows, else `chrome`) | `msedge`, `chrome` or `chromium` |
-| `AEM_DEBUG_ARTIFACTS_DIR` | `${PLUGIN_DATA}` or `%TEMP%/aem-debug-mcp` | Reports, screenshots, server log, toggle journal |
+| `AEM_DEBUG_ARTIFACTS_DIR` | `${PLUGIN_DATA}` or `%TEMP%/aem-debug-mcp` | Reports, screenshots, server log, toggle journal, remembered settings |
 | `AEM_DEBUG_PROJECT_PACKAGES` | from the project index | Java packages watched for exceptions by default |
 | `AEM_DEBUG_IDLE_DETACH_MINUTES` | `15` | Idle time before JDWP detach and debug-toggle revert (0 = never) |
 | `AEM_DEBUG_LOGIN_WAIT_SECONDS` | `60` | How long a tool waits for the user to finish signing in |
@@ -151,12 +159,59 @@ When you are logged in, `aem_status` and `project_index` check each project fold
 in AEM: `deployed`, `partly deployed`, or `NOT deployed here`. The last one means the folder is wrong or the
 project is not deployed on this instance.
 
+## Publish and front-end dev servers
+
+**Publish pages**: pass `instance=publish` with a path, or a publish URL (`http://localhost:4503/...`); a URL of
+an instance always selects that instance. Renders of publish show the page as a visitor sees it: anonymous, or
+with the captured site session (below). `session=aem` renders with the AEM login of publish instead.
+
+**Front-end dev servers** (for example a React, webpack or Vite dev server on `localhost:3000` that proxies some
+paths to AEM): pass the dev-server URL as `path`. The page is rendered exactly as given; a URL whose origin is
+not an AEM instance is never rewritten to one. The first time, also pass `instance=publish` or
+`instance=author`: the AEM instance that dev server proxies to. To find it, check the dev server's proxy
+configuration (`setupProxy.js`, `devServer.proxy`, `server.proxy` or the `"proxy"` field of `package.json`).
+The answer is remembered in `dev-servers.json` for later calls and chats; `AEM_DEV_SERVERS` configures it up
+front.
+
+What `debug_page` gives you on a dev-server page:
+
+- the browser side as usual: screenshot, HTTP statuses, failed requests, console errors, network log;
+- the server side of the instance behind it (its error.log, Recent Requests and, with JDWP, JVM), matched to the
+  browser requests by method and path. This works when the proxy forwards paths unchanged; a "Dev server"
+  section lists the requests that reached AEM.
+
+Many dev servers answer every page URL with their own app shell (single-page apps), so the document itself is
+not rendered by AEM: there is no component map and no Request Progress Tracker for it. `components=true` maps
+components when the dev server proxies the page itself to AEM.
+
+**JVM capture on publish** needs publish started with JDWP on its own port (see [Requirements](#requirements)).
+Without `AEM_PUBLISH_JDWP_PORT`, `jvm_connection action=attach instance=publish port=<port>` sets the port for
+the current chat. All `jvm_*` tools take `instance=publish`.
+
 ## Authentication
 
-When a tool needs AEM data and there is no session, the server opens a **visible browser window on the AEM
-login page**. Sign in there (local `admin` or SSO); the server captures the `login-token` cookie **in memory
-only** and closes the window. Nothing is written to disk. `aem_auth action=logout` forgets the session.
-For unattended use set `AEM_USER`/`AEM_PASSWORD` in the server environment (still never logged or returned).
+**AEM logins (author and publish).** When a tool needs AEM data and there is no session, the server opens a
+**visible browser window on the AEM login page** of that instance. Sign in there (local `admin` or SSO); the
+server captures the `login-token` cookie and closes the window. Calls that need the same login while the window
+is open wait for that one window; it is never replaced by a new one.
+
+The token is remembered in `aem-logins.json` so that a new chat (every chat starts its own server) does not ask
+again. The file holds only login tokens, never passwords; it is readable only by your OS user, entries expire
+after 7 days, and an entry is removed when AEM rejects the token or on `aem_auth action=logout`. Set
+`AEM_DEBUG_REMEMBER_LOGINS=false` to keep logins in memory only. For unattended use set
+`AEM_USER`/`AEM_PASSWORD` in the server environment (still never logged or returned).
+
+Browsers do not scope cookies by port: author and publish both set `login-token` on `localhost`, and cookies of
+`localhost:4503` are also sent to a dev server on `localhost:3000` (which may forward them). The server keeps
+each instance's token separately and gives every render exactly one identity.
+
+**Site visitor login.** For pages that need a site's own login (a customer account, often through an external
+identity provider), `aem_auth action=site-login url=<page>` opens a visible window on that local page. Sign in
+there with any login flow and close the window when the site shows you signed in. The server captures the
+cookies of local hosts and the local and session storage of local origins; the identity provider's own cookies
+are dropped. This site session is kept **in memory only** and never written to disk. Renders of publish and
+dev-server pages use it automatically (`session=auto`); `session=none` renders anonymously, and
+`aem_auth action=site-logout` forgets it.
 
 ## Files written
 
@@ -166,3 +221,6 @@ Everything goes to `AEM_DEBUG_ARTIFACTS_DIR`:
 - `reports/rpt-NNNN/` - report artifacts (also exposed as `aemdbg://reports/rpt-NNNN/<file>` resources)
 - `toggle-journal.json` - debug toggles to revert (debug settings only, no credentials)
 - `projects.json` - local project folders named in chats, per AEM author URL (paths only)
+- `aem-logins.json` (+ `aem-logins.json.lock`) - remembered AEM login tokens per instance, owner-only (not with
+  `AEM_DEBUG_REMEMBER_LOGINS=false`)
+- `dev-servers.json` - front-end dev servers and the AEM instance each one proxies to

@@ -86,11 +86,18 @@ final class DebugRun {
         DebugRun run = new DebugRun(s, instance);
         try {
             run.startJvm(context, options);
-            run.startLogs(context);
-            if (options.rpt) {
+            String loginProblem = run.signIn(context, options);
+            if (loginProblem == null || s.config.logDir(instance.name()) != null) {
+                run.startLogs(context);
+            } else {
+                run.notes.add("error.log not captured: " + loginProblem);
+            }
+            if (!options.rpt) {
+                run.notes.add("Request Progress Tracker skipped (rpt=false).");
+            } else if (loginProblem == null) {
                 run.startRpt(context);
             } else {
-                run.notes.add("Request Progress Tracker skipped (rpt=false).");
+                run.notes.add("Request Progress Tracker not captured: " + loginProblem);
             }
         } catch (RuntimeException e) {
             run.release();
@@ -99,26 +106,45 @@ final class DebugRun {
         return run;
     }
 
+    /**
+     * Error.log (via sling.home) and the Recent Requests console come from the Felix console, which needs the AEM
+     * login on publish too. Signs in once up front so a pending login window is waited for only once; returns why
+     * that failed, or null.
+     */
+    private String signIn(ToolContext context, Options options) {
+        if (instance.isAuthor() || (!options.rpt && s.config.logDir(instance.name()) != null)) {
+            return null;
+        }
+        try {
+            s.auth.ensureSession(context, instance);
+            return null;
+        } catch (RuntimeException e) {
+            return Text.oneLine(e.getMessage(), 400);
+        }
+    }
+
     private void startJvm(ToolContext context, Options options) {
         if (!options.jvm) {
             jvmNotes.add("JVM capture off (jvm=false).");
             return;
         }
-        if (s.jdi == null) {
+        JdiEngine engine = engine();
+        if (engine == null) {
             jvmNotes.add("JVM capture unavailable: " + JdiSupport.unavailableMessage());
             return;
         }
-        if (s.config.jdwpHost() == null) {
-            jvmNotes.add("JVM capture disabled: no local JDWP host configured.");
+        String problem = JvmTools.endpointProblem(s, instance);
+        if (problem != null) {
+            jvmNotes.add("JVM capture skipped: " + problem);
             return;
         }
-        JdiEngine engine = s.jdi;
         if (!engine.isAttached()) {
             try {
-                context.progress("Attaching to JDWP " + s.config.jdwpHost() + ":" + s.config.jdwpPort());
-                JvmTools.attach(s, 5000);
-                jvmNotes.add("Attached to JDWP " + engine.endpoint() + "; it stays attached until jvm_connection "
-                        + "action=detach, debug_cleanup or the idle timeout (IntelliJ cannot attach meanwhile).");
+                context.progress("Attaching to JDWP " + JvmTools.endpoint(s, instance));
+                JvmTools.attach(s, instance, 5000);
+                jvmNotes.add("Attached to the " + instance.name() + " JVM at " + engine.endpoint() + "; it stays "
+                        + "attached until jvm_connection action=detach, debug_cleanup or the idle timeout (IntelliJ "
+                        + "cannot attach meanwhile).");
             } catch (ToolException e) {
                 jvmNotes.add("JVM capture skipped: " + e.getMessage());
                 return;
@@ -196,8 +222,9 @@ final class DebugRun {
             JvmTools.pause(settleMs);
         }
         finishedAt = System.currentTimeMillis();
-        if (jvmActive && s.jdi != null) {
-            snapshots.addAll(s.jdi.snapshots().since(startedAt));
+        JdiEngine engine = engine();
+        if (jvmActive && engine != null) {
+            snapshots.addAll(engine.snapshots().since(startedAt));
         }
         if (mark != null) {
             try {
@@ -274,17 +301,23 @@ final class DebugRun {
 
     /** Removes the temporary breakpoints and watches of this run; the JDWP connection stays. */
     void release() {
-        if (s.jdi == null) {
+        JdiEngine engine = engine();
+        if (engine == null) {
             return;
         }
         for (String id : breakpointIds) {
-            s.jdi.removeBreakpoint(id);
+            engine.removeBreakpoint(id);
         }
         for (String id : watchIds) {
-            s.jdi.removeExceptionWatch(id);
+            engine.removeExceptionWatch(id);
         }
         breakpointIds.clear();
         watchIds.clear();
+    }
+
+    /** The JVM engine of this run's instance, or null without jdk.jdi. */
+    JdiEngine engine() {
+        return s.jdi(instance.name());
     }
 
     /**

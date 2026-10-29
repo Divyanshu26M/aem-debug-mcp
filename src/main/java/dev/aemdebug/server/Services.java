@@ -6,7 +6,10 @@ import dev.aemdebug.aem.AemInstances;
 import dev.aemdebug.aem.AuthManager;
 import dev.aemdebug.aem.ContentService;
 import dev.aemdebug.aem.CookieJar;
+import dev.aemdebug.aem.DevServers;
 import dev.aemdebug.aem.FelixConsole;
+import dev.aemdebug.aem.LoginStore;
+import dev.aemdebug.aem.PageTargets;
 import dev.aemdebug.aem.ResolverClient;
 import dev.aemdebug.browser.BrowserEngine;
 import dev.aemdebug.config.Config;
@@ -21,6 +24,12 @@ import dev.aemdebug.rpt.RecentRequestsClient;
 import dev.aemdebug.toggles.RevertJournal;
 import dev.aemdebug.toggles.ToggleService;
 import dev.aemdebug.tools.ActivityTracker;
+
+import java.util.Collection;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /** Composition root: all long-lived services, shared by the tools. */
 public final class Services {
@@ -44,8 +53,11 @@ public final class Services {
     public final ToggleService toggles;
     public final ProjectIndexService projects;
     public final ComponentMapper mapper;
-    /** Null when the runtime has no jdk.jdi module. */
-    public final JdiEngine jdi;
+    public final DevServers devServers;
+    public final PageTargets pageTargets;
+    /** One engine per AEM instance (author, publish); empty when the runtime has no jdk.jdi module. */
+    private final Map<String, JdiEngine> jdiEngines = new LinkedHashMap<>();
+    private final Map<String, Integer> jdwpPortOverrides = new ConcurrentHashMap<>();
 
     public Services(Config config) {
         this.config = config;
@@ -54,7 +66,8 @@ public final class Services {
         this.instances = new AemInstances(config);
         this.cookies = new CookieJar();
         this.http = new AemHttpClient(cookies);
-        this.auth = new AuthManager(config, http);
+        this.auth = new AuthManager(config, http,
+                config.rememberLogins() ? LoginStore.in(config.artifactsDir()) : LoginStore.disabled());
         this.aem = new AemClient(instances, http, auth);
         this.felix = new FelixConsole(aem);
         this.logLocator = new LogLocator(config, felix);
@@ -68,10 +81,15 @@ public final class Services {
                 new RevertJournal(config.artifactsDir().resolve("toggle-journal.json")));
         this.projects = new ProjectIndexService(config);
         this.mapper = new ComponentMapper(aem, content, felix, browser, projects);
-        this.jdi = JdiSupport.available() ? new JdiEngine(config.idleDetachMinutes()) : null;
+        this.devServers = new DevServers(config.artifactsDir(), config.devServers());
+        this.pageTargets = new PageTargets(instances, devServers);
+        if (JdiSupport.available()) {
+            jdiEngines.put("author", new JdiEngine(config.idleDetachMinutes(), "author"));
+            jdiEngines.put("publish", new JdiEngine(config.idleDetachMinutes(), "publish"));
+        }
         this.cleanup = new CleanupCoordinator();
-        if (jdi != null) {
-            this.cleanup.register(jdi);
+        for (Map.Entry<String, JdiEngine> entry : jdiEngines.entrySet()) {
+            this.cleanup.register("author".equals(entry.getKey()) ? entry.getValue() : quietWhenUnused(entry.getValue()));
         }
         this.cleanup.register(toggles);
         this.cleanup.register(new CleanupCoordinator.Participant() {
@@ -85,5 +103,52 @@ public final class Services {
                 return shutdown ? null : browser.closeBrowsers();
             }
         });
+    }
+
+    /** The JVM engine of an instance ("author" or "publish"), or null when jdk.jdi is not available. */
+    public JdiEngine jdi(String instance) {
+        return jdiEngines.get(instance);
+    }
+
+    public Collection<JdiEngine> jdiEngines() {
+        return Collections.unmodifiableCollection(jdiEngines.values());
+    }
+
+    /** JDWP port of an instance: a port given to jvm_connection in this session, else the configuration; -1 if none. */
+    public int jdwpPort(String instance) {
+        Integer override = jdwpPortOverrides.get(instance);
+        return override != null ? override : config.jdwpPort(instance);
+    }
+
+    public void overrideJdwpPort(String instance, int port) {
+        jdwpPortOverrides.put(instance, port);
+    }
+
+    /** Cleanup of an engine that reports nothing while it was never attached and holds no definitions. */
+    private static CleanupCoordinator.Participant quietWhenUnused(JdiEngine engine) {
+        return new CleanupCoordinator.Participant() {
+            @Override
+            public String name() {
+                return engine.name();
+            }
+
+            @Override
+            public String cleanup(dev.aemdebug.tools.ToolContext context, boolean shutdown) {
+                if (!engine.isAttached() && engine.breakpointList().isEmpty() && engine.watchList().isEmpty()) {
+                    return null;
+                }
+                return engine.cleanup(context, shutdown);
+            }
+
+            @Override
+            public String onIdle() {
+                return engine.onIdle();
+            }
+
+            @Override
+            public void recover() {
+                engine.recover();
+            }
+        };
     }
 }

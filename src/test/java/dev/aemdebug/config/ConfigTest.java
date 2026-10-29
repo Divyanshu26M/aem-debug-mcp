@@ -58,6 +58,47 @@ class ConfigTest {
     }
 
     @Test
+    void publishDebuggingDevServersAndRememberedLogins() {
+        Config defaults = Config.fromEnvironment(Map.of());
+        assertThat(defaults.jdwpPort("author")).isEqualTo(8767);
+        assertThat(defaults.jdwpPort("publish")).isEqualTo(-1);
+        assertThat(defaults.logDir("publish")).isNull();
+        assertThat(defaults.devServers()).isEmpty();
+        assertThat(defaults.rememberLogins()).isTrue();
+
+        Map<String, String> env = new HashMap<>();
+        env.put("AEM_PUBLISH_JDWP_PORT", "8768");
+        env.put("AEM_LOG_DIR", "/aem/author/crx-quickstart/logs");
+        env.put("AEM_PUBLISH_LOG_DIR", "/aem/publish/crx-quickstart/logs");
+        env.put("AEM_DEV_SERVERS", "http://localhost:3000=publish, http://127.0.0.1:5173=Author");
+        env.put("AEM_DEBUG_REMEMBER_LOGINS", "false");
+        Config config = Config.fromEnvironment(env);
+        assertThat(config.jdwpPort("publish")).isEqualTo(8768);
+        assertThat(config.jdwpPort("author")).isEqualTo(8767);
+        assertThat(config.logDir("publish").toString().replace('\\', '/')).endsWith("publish/crx-quickstart/logs");
+        assertThat(config.logDir("author").toString().replace('\\', '/')).endsWith("author/crx-quickstart/logs");
+        assertThat(config.devServers()).containsEntry("http://localhost:3000", "publish")
+                .containsEntry("http://localhost:5173", "author").hasSize(2);
+        assertThat(config.rememberLogins()).isFalse();
+        assertThat(config.problems()).isEmpty();
+    }
+
+    @Test
+    void invalidDevServerEntriesAreReported() {
+        Map<String, String> env = new HashMap<>();
+        env.put("AEM_DEV_SERVERS", "http://localhost:3000;http://localhost:3001=stage;https://www.example.com=publish");
+        env.put("AEM_PUBLISH_JDWP_PORT", "99999");
+        Config config = Config.fromEnvironment(env);
+        assertThat(config.devServers()).isEmpty();
+        assertThat(config.jdwpPort("publish")).isEqualTo(-1);
+        assertThat(config.problems()).hasSize(4)
+                .anyMatch(p -> p.contains("'http://localhost:3000'"))
+                .anyMatch(p -> p.contains("'http://localhost:3001=stage'"))
+                .anyMatch(p -> p.contains("Only local AEM instances are allowed"))
+                .anyMatch(p -> p.contains("AEM_PUBLISH_JDWP_PORT"));
+    }
+
+    @Test
     void hostPolicyAllowsOnlyLocalHosts() {
         assertThat(HostPolicy.isLocalHost("localhost")).isTrue();
         assertThat(HostPolicy.isLocalHost("127.0.0.1")).isTrue();
@@ -69,5 +110,9 @@ class ConfigTest {
                 .hasMessageContaining("http or https");
         assertThatThrownBy(() -> HostPolicy.requireLocal(URI.create("http://evil.example/")))
                 .isInstanceOf(SecurityException.class);
+        assertThat(HostPolicy.originKey(URI.create("http://127.0.0.1:3000/x?y=1")))
+                .isEqualTo(HostPolicy.originKey(URI.create("http://LOCALHOST:3000")))
+                .isEqualTo("http://localhost:3000");
+        assertThat(HostPolicy.originKey(URI.create("https://localhost/"))).isEqualTo("https://localhost:443");
     }
 }

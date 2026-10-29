@@ -1,5 +1,6 @@
 package dev.aemdebug.tools.impl;
 
+import dev.aemdebug.jdi.JdiEngine;
 import dev.aemdebug.server.Services;
 import dev.aemdebug.tools.AbstractTool;
 import dev.aemdebug.tools.ToolContext;
@@ -41,8 +42,12 @@ public final class DebugCleanupTool extends AbstractTool {
             lines.add(stopped);
         }
         lines.addAll(s.cleanup.runAll(context, false));
-        if (args.bool("clearSnapshots", false) && s.jdi != null) {
-            lines.add("Deleted " + s.jdi.snapshots().clear() + " stored snapshot(s).");
+        if (args.bool("clearSnapshots", false)) {
+            int deleted = 0;
+            for (JdiEngine engine : s.jdiEngines()) {
+                deleted += engine.snapshots().clear();
+            }
+            lines.add("Deleted " + deleted + " stored snapshot(s).");
         }
         StringBuilder out = new StringBuilder("## Debug cleanup\n");
         for (String line : lines) {

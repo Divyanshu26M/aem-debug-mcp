@@ -35,7 +35,10 @@ public final class AemDebugServer {
             "Typical loop: aem_status -> debug_page (render + component map + server-side exceptions + logs for that",
             "request) -> component_inspect / aem_get_resource / aem_get_model_json -> jvm_breakpoint snapshots or",
             "jvm_exception_watch -> re-run debug_page -> fix code -> redeploy -> verify with debug_page.",
-            "AEM login: tools open a visible login window when needed; never ask the user for passwords.",
+            "Publish (instance=publish) and local front-end dev servers work too: pass the dev-server URL as path",
+            "(e.g. http://localhost:3000/...) and, the first time, instance= the AEM instance it proxies to.",
+            "AEM login: tools open a visible login window when needed; never ask the user for passwords. For a",
+            "site's own visitor/customer login use aem_auth action=site-login (visible window, kept in memory only).",
             "JVM tools attach exclusively to the JDWP port; ask the user to detach IntelliJ first and hand the port back",
             "with jvm_connection action=detach. Never set aem_debug_toggle confirm=true without the user's explicit OK.",
             "Finish with debug_cleanup (removes breakpoints, reverts debug toggles, detaches JDWP, closes browsers).");

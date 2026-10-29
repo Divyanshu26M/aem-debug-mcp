@@ -17,6 +17,8 @@ public final class RenderRequest {
     private boolean fullPage = true;
     private boolean blockExternal;
     private Map<String, String> cookies = new LinkedHashMap<>();
+    private SiteSession siteSession;
+    private String sessionNote = "anonymous";
     private String probeScript;
     private Object probeArg;
     private final List<String> elementShots = new ArrayList<>();
@@ -54,6 +56,18 @@ public final class RenderRequest {
 
     public RenderRequest cookies(Map<String, String> value) {
         this.cookies = new LinkedHashMap<>(value);
+        return this;
+    }
+
+    /** Renders with a captured site session (cookies and storage) instead of the session cookies. */
+    public RenderRequest siteSession(SiteSession value) {
+        this.siteSession = value;
+        return this;
+    }
+
+    /** How the render is authenticated, for the report, e.g. "anonymous" or "AEM login of publish (admin)". */
+    public RenderRequest sessionNote(String value) {
+        this.sessionNote = value;
         return this;
     }
 
@@ -103,6 +117,14 @@ public final class RenderRequest {
 
     public Map<String, String> cookies() {
         return cookies;
+    }
+
+    public SiteSession siteSession() {
+        return siteSession;
+    }
+
+    public String sessionNote() {
+        return sessionNote;
     }
 
     public String probeScript() {

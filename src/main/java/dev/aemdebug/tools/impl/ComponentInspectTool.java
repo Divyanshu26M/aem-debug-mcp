@@ -157,7 +157,8 @@ public final class ComponentInspectTool extends AbstractTool {
             out.append("\n### Rendered\n");
             try {
                 Args renderArgs = Args.of("path", pagePath, "instance", instance.name());
-                RenderRequest request = PageRenderTool.buildRequest(s, context, renderArgs, instance).fullPage(true);
+                RenderRequest request = PageRenderTool.buildRequest(s, context, renderArgs,
+                        s.pageTargets.resolve(pagePath, instance.name())).fullPage(true);
                 ComponentMapper.Result map = s.mapper.mapAndRender(context, instance, pagePath, request);
                 ComponentNode node = map.byPath(path);
                 if (node == null) {

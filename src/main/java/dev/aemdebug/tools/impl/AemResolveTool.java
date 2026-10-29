@@ -1,6 +1,7 @@
 package dev.aemdebug.tools.impl;
 
 import dev.aemdebug.aem.AemInstance;
+import dev.aemdebug.aem.PageTarget;
 import dev.aemdebug.aem.PageUrls;
 import dev.aemdebug.aem.ResolverClient;
 import dev.aemdebug.rpt.RecentRequestsClient;
@@ -28,20 +29,27 @@ public final class AemResolveTool extends AbstractTool {
                         + "of preference (Sling Servlet Resolver console). If the request is in Recent Requests, the "
                         + "script actually used and the included components are added. Read-only.",
                 Schema.object()
-                        .requiredStr("url", "Request path, e.g. /content/wknd/us/en.html or /content/x.model.json")
+                        .requiredStr("url", "Request path or local URL, e.g. /content/wknd/us/en.html, "
+                                + "/content/x.model.json or http://localhost:4503/content/wknd/us/en.html")
                         .enumStr("method", "HTTP method (default GET)", "GET", "POST", "HEAD")
-                        .enumStr("instance", "author (default) or publish", "author", "publish"));
+                        .enumStr("instance", "author (default) or publish; a URL of an instance selects it", "author",
+                                "publish"));
         this.s = services;
     }
 
     @Override
     public ToolResult call(ToolContext context, Args args) {
-        AemInstance instance = s.instances.resolve(args.str("instance"));
-        String url = PageUrls.pathOnly(PageUrls.toRequestPath(args.requireStr("url")));
+        PageTarget target = s.pageTargets.resolve(args.requireStr("url"), args.str("instance"));
+        AemInstance instance = target.instance();
+        String url = PageUrls.pathOnly(target.requestPath());
         String method = args.choice("method", "GET", "GET", "POST", "HEAD").toUpperCase();
         ResolverClient.Resolution r = s.resolver.resolve(context, instance, url, method);
         StringBuilder out = new StringBuilder("### Resolution of ").append(method).append(' ').append(url)
-                .append(" (").append(instance.name()).append(")\n");
+                .append(" (").append(target.describe()).append(")\n");
+        if (target.devServer()) {
+            out.append("- resolved on ").append(instance.name()).append(" as if the dev server proxied this path "
+                    + "unchanged; paths the dev server answers itself never reach AEM\n");
+        }
         if (!r.decomposed.isEmpty()) {
             out.append("- decomposed: ").append(r.decomposed).append('\n');
         }

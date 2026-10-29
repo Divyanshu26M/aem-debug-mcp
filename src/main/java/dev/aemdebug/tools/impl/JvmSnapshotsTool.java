@@ -1,7 +1,7 @@
 package dev.aemdebug.tools.impl;
 
+import dev.aemdebug.aem.AemInstance;
 import dev.aemdebug.jdi.JdiEngine;
-import dev.aemdebug.jdi.JdiSupport;
 import dev.aemdebug.jdi.Snapshot;
 import dev.aemdebug.jdi.SnapshotStore;
 import dev.aemdebug.server.Services;
@@ -45,16 +45,15 @@ public final class JvmSnapshotsTool extends AbstractTool {
                         .integer("stackLines", "Stack lines for action=get (default 60)", 1, 400)
                         .str("objectId", "Object id for action=expand, as shown in a snapshot")
                         .integer("depth", "Levels for action=expand (default 2)", 1, 4)
-                        .bool("save", "Also save the listed snapshots as a JSON report artifact (default false)"));
+                        .bool("save", "Also save the listed snapshots as a JSON report artifact (default false)")
+                        .enumStr("instance", "JVM of author (default) or publish", "author", "publish"));
         this.s = services;
     }
 
     @Override
     public ToolResult call(ToolContext context, Args args) {
-        if (s.jdi == null) {
-            throw new ToolException(JdiSupport.unavailableMessage());
-        }
-        JdiEngine engine = s.jdi;
+        AemInstance instance = JvmTools.instance(s, args);
+        JdiEngine engine = JvmTools.engine(s, instance);
         SnapshotStore store = engine.snapshots();
         String action = args.choice("action", "list", "list", "get", "expand", "clear");
         switch (action) {
@@ -62,8 +61,9 @@ public final class JvmSnapshotsTool extends AbstractTool {
                 String id = args.requireStr("id").trim();
                 Snapshot snapshot = store.get(id);
                 if (snapshot == null) {
-                    throw new ToolException("No snapshot " + id + " (" + store.size()
-                            + " stored; jvm_snapshots action=list shows the ids).");
+                    throw new ToolException("No snapshot " + id + " in the " + instance.name() + " JVM ("
+                            + store.size() + " stored; jvm_snapshots action=list shows the ids"
+                            + (instance.isAuthor() ? "; snapshots of publish need instance=publish" : "") + ").");
                 }
                 return ToolResult.of(snapshot.format(args.integer("stackLines", 60, 1, 400)));
             }

@@ -63,7 +63,8 @@ public final class RecentRequestsClient {
         AemResponse response = aem.get(context, instance, CONSOLE);
         if (response.status() == 404) {
             throw new ToolException("The Recent Requests console (" + CONSOLE + ") is not available on " + instance
-                    + ". It may be disabled; aem_debug_toggle toggle=recent-requests can raise the buffer size.");
+                    + ". It may be disabled; aem_debug_toggle toggle=recent-requests"
+                    + (instance.isAuthor() ? "" : " instance=" + instance.name()) + " can raise the buffer size.");
         }
         AemClient.requireOk(response, CONSOLE);
         return parseList(response.text());

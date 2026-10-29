@@ -56,4 +56,18 @@ public final class HostPolicy {
             throw new SecurityException("Blocked request to non-local host: " + (uri == null ? "null" : uri.getHost()));
         }
     }
+
+    /**
+     * Comparable origin of a URL, e.g. "http://localhost:4503". Loopback names (127.0.0.1, ::1) count as localhost and
+     * a missing port becomes the scheme's default, so the same local server always gets the same key.
+     */
+    public static String originKey(URI uri) {
+        String scheme = uri.getScheme() == null ? "http" : uri.getScheme().toLowerCase(Locale.ROOT);
+        String host = uri.getHost() == null ? "" : uri.getHost().toLowerCase(Locale.ROOT);
+        if (isLocalHost(host)) {
+            host = "localhost";
+        }
+        int port = uri.getPort() >= 0 ? uri.getPort() : "https".equals(scheme) ? 443 : 80;
+        return scheme + "://" + host + ":" + port;
+    }
 }
