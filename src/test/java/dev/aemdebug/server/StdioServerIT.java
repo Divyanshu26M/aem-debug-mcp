@@ -101,6 +101,8 @@ class StdioServerIT {
                         .contains("run modes: author, crx3").contains("error.log")
                         .contains("### Local AEM project").contains("project_index projectDir=<folder>");
                 assertThat(statusText).doesNotContain("admin\",\"j_password");
+                // The fake AEM runs in this JVM: the jar finds it through the OS and reads its JDWP state (jdk.attach).
+                assertThat(statusText).as(statusText).contains("pid " + ProcessHandle.current().pid());
 
                 McpSchema.CallToolResult auth = client.callTool(McpSchema.CallToolRequest.builder("aem_auth")
                         .arguments(Map.of("action", "status")).build());

@@ -5,6 +5,7 @@ import dev.aemdebug.jdi.BreakpointSpec;
 import dev.aemdebug.jdi.ExceptionWatchSpec;
 import dev.aemdebug.jdi.JdiEngine;
 import dev.aemdebug.jdi.JdiSupport;
+import dev.aemdebug.jdi.JdwpLocator;
 import dev.aemdebug.project.ProjectIndex;
 import dev.aemdebug.project.ProjectModel;
 import dev.aemdebug.server.Services;
@@ -24,9 +25,6 @@ final class JvmTools {
     static final List<String> DEFAULT_WATCH_PACKAGES =
             List.of("org.apache.sling.models", "org.apache.sling.scripting.sightly");
 
-    /** Suggested JDWP port for publish, next to the usual author port. */
-    static final int SUGGESTED_PUBLISH_PORT = 8768;
-
     private JvmTools() {
     }
 
@@ -43,48 +41,50 @@ final class JvmTools {
         return engine;
     }
 
-    /** Why the JVM of an instance cannot be reached over JDWP, or null when host and port are known. */
+    /** Why the JVM of an instance cannot be attached over JDWP now (with the cause when known), or null. */
     static String endpointProblem(Services s, AemInstance instance) {
-        if (s.config.jdwpHost() == null) {
-            return "JVM debugging is disabled: AEM_JDWP_HOST is not a local host.";
-        }
-        if (s.jdwpPort(instance.name()) < 0) {
-            return "No JDWP port is configured for " + instance.name() + ". Start " + instance.name()
-                    + " with -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=" + SUGGESTED_PUBLISH_PORT
-                    + " (a port of your choice, not the author's), then set AEM_PUBLISH_JDWP_PORT=" + SUGGESTED_PUBLISH_PORT
-                    + " in the MCP server environment or call jvm_connection action=attach instance=" + instance.name()
-                    + " port=" + SUGGESTED_PUBLISH_PORT + ".";
-        }
-        return null;
+        return s.jdwp.endpoint(instance, false).problem();
     }
 
-    /** "publish 127.0.0.1:8768" or "publish (no JDWP port)". */
+    /** "author 127.0.0.1:8767 (detected)" or "publish (started without JDWP)". */
     static String endpoint(Services s, AemInstance instance) {
-        int port = s.jdwpPort(instance.name());
-        return instance.name() + (port < 0 || s.config.jdwpHost() == null ? " (no JDWP port)"
-                : " " + s.config.jdwpHost() + ":" + port);
+        return instance.name() + " " + s.jdwp.endpoint(instance, false).label();
     }
 
-    /** Attaches, retrying briefly: the JDWP agent re-opens its port a moment after a probe or a detach. */
+    /**
+     * Attaches to the port found by {@link dev.aemdebug.jdi.JdwpLocator}. A refused connection is retried briefly
+     * (the agent re-listens a moment after a detach) with the port detected again, and finally explained with what
+     * the JVM reports (another debugger connected, no JDWP agent, ...).
+     */
     static String attach(Services s, AemInstance instance, int timeoutMs) {
         JdiEngine engine = engine(s, instance);
-        String problem = endpointProblem(s, instance);
-        if (problem != null) {
-            throw new ToolException(problem);
-        }
+        JdwpLocator.Endpoint endpoint = s.jdwp.endpoint(instance, false);
         ToolException last = null;
         for (int attempt = 1; attempt <= 3; attempt++) {
+            String problem = endpoint.problem();
+            if (problem != null) {
+                throw new ToolException(problem);
+            }
             try {
-                return engine.attach(s.config.jdwpHost(), s.jdwpPort(instance.name()), timeoutMs);
+                String result = engine.attach(endpoint.host(), endpoint.port(), timeoutMs);
+                return endpoint.source() == JdwpLocator.Source.DETECTED
+                        ? result + " The port was " + endpoint.origin() + "." : result;
             } catch (ToolException e) {
                 last = e;
+                s.jdwp.invalidate(instance.name());
                 if (attempt == 3 || !String.valueOf(e.getMessage()).contains("refused")) {
                     break;
                 }
                 pause(300L * attempt);
+                endpoint = s.jdwp.endpoint(instance, true);
             }
         }
-        throw last;
+        JdwpLocator.Endpoint fresh = s.jdwp.endpoint(instance, true);
+        if (fresh.problem() != null) {
+            throw new ToolException(fresh.problem());
+        }
+        throw new ToolException(String.valueOf(last.getMessage()).contains("refused") ? fresh.refused()
+                : last.getMessage());
     }
 
     /** Attaches if needed; returns a note (or null) instead of failing so definitions can still be made. */

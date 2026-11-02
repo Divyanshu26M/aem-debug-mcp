@@ -74,21 +74,25 @@ task; it uses the debug tools, cannot change anything, and returns the cause wit
   tool output masks secrets.
 - **JDWP is exclusive**: AEM accepts one debugger at a time. The server attaches on demand and detaches on
   `jvm_connection action=detach`, on `debug_cleanup`, or after inactivity, so IntelliJ can reconnect. It
-  never suspends the whole VM and never calls `VirtualMachine.exit`.
+  never suspends the whole VM and never calls `VirtualMachine.exit`. To find the JDWP port it reads the address
+  that the JDWP agent publishes inside the AEM JVM, through the JDK's Attach API, without connecting a debugger.
 
 ## Requirements
 
 - JDK 17 or later to run the server (JDK 21 recommended). A full JDK is needed for JVM debugging because the
-  server uses the `jdk.jdi` module.
+  server uses the `jdk.jdi` and `jdk.attach` modules.
 - Microsoft Edge or Google Chrome installed (used headless; no browser download is needed).
-- A local AEM SDK (or 6.5) started with JDWP enabled, for example:
+- A local AEM SDK (or 6.5) started with JDWP enabled, on any free port, for example:
 
   ```
   java -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=8767 -jar aem-sdk-author-p4502.jar -gui
   ```
 
-  Publish runs in its own JVM. For JVM capture on publish, start it with its own port (the plugin expects
-  `address=8768`); everything else works on publish without JDWP.
+  The server finds the port itself: it looks up the process that serves the AEM URL (port 4502) and reads where
+  that JVM's JDWP agent listens. Publish runs in its own JVM; start it with a port of its own (e.g. `address=8768`)
+  for JVM capture there. Everything else works on publish without JDWP, and `aem_status` says which instance
+  runs without it. `AEM_JDWP_PORT` / `AEM_PUBLISH_JDWP_PORT` are only used when the port cannot be detected (for
+  example AEM in a container, in WSL or under another user).
 
 ## Install
 
@@ -101,7 +105,7 @@ copilot plugin install ./plugin
 
 **Standalone MCP server** (VS Code, IntelliJ or any MCP client): run `java -jar aem-debug-mcp.jar` over stdio.
 [docs/setup.md](docs/setup.md) has ready-to-paste `mcp.json` snippets and all configuration variables (AEM
-URLs, JDWP host/port, project directory, log directory, browser channel, idle timeout).
+URLs, fallback JDWP host/port, project directory, log directory, browser channel, idle timeout).
 
 ## Typical session
 
@@ -141,7 +145,8 @@ src/main/java/dev/aemdebug/
               content reads, page targets (AEM instances and front-end dev servers)
   browser/    Playwright-based rendering, screenshots, AEM and site login windows
   mapping/    DOM <-> component <-> model <-> source mapping
-  jdi/        snapshot-first JDI engine (breakpoints, logpoints, exception watches, class versions)
+  jdi/        snapshot-first JDI engine (breakpoints, logpoints, exception watches, class versions) and JDWP
+              port detection (process serving the AEM port, its JDWP agent's address via the Attach API)
   logs/ rpt/  error.log reader/parser, Request Progress Tracker parser, Recent Requests client
   correlate/  request keys (Sling thread names) and browser/server correlation
   toggles/    confirmed, journaled, auto-reverted debug OSGi toggles
@@ -157,10 +162,11 @@ docs/         setup, tools, troubleshooting, spike findings
 This is an MVP. Verified on a real local AEM author: the login window, `debug_page` (JDWP attach, temporary
 exception watch, component location, error.log lines matched to the page's own requests), `page_component_map`,
 `aem_page_context`, `component_inspect`, `page_render`, `aem_get_resource`, `aem_osgi_status`,
-`aem_get_osgi_config` and `aem_logs`. Not yet verified on a real page: `aem_debug_toggle`, breakpoint and
-exception snapshots in project code, linking components to local source files, `debug_capture`, `aem_query`,
-`aem_resolve`, `aem_recent_requests`, and the newer publish JVM capture and site login window. Interactive
-suspend/step debugging and a companion OSGi bundle are planned for later phases. See
+`aem_get_osgi_config` and `aem_logs`. JDWP port detection was checked on a local author (port detected from its
+JVM) and publish (reported as started without JDWP). Not yet verified on a real page: `aem_debug_toggle`,
+breakpoint and exception snapshots in project code, linking components to local source files, `debug_capture`,
+`aem_query`, `aem_resolve`, `aem_recent_requests`, and the newer publish JVM capture and site login window.
+Interactive suspend/step debugging and a companion OSGi bundle are planned for later phases. See
 [docs/spike-findings.md](docs/spike-findings.md) and [docs/troubleshooting.md](docs/troubleshooting.md).
 
 ## License

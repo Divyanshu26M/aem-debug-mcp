@@ -115,6 +115,7 @@ public final class JdiEngine implements CleanupCoordinator.Participant {
     private volatile Field detailMessageField;
     private volatile Field causeField;
     private final String label;
+    private volatile long lastDetachedAt;
 
     public JdiEngine(int idleDetachMinutes) {
         this(idleDetachMinutes, null);
@@ -128,6 +129,11 @@ public final class JdiEngine implements CleanupCoordinator.Participant {
 
     public String label() {
         return label;
+    }
+
+    /** When this engine last detached or lost its connection (0 = never); the JDWP agent re-listens after that. */
+    public long lastDetachedAt() {
+        return lastDetachedAt;
     }
 
     // ------------------------------------------------------------------ connection
@@ -264,6 +270,7 @@ public final class JdiEngine implements CleanupCoordinator.Participant {
                     + "can reattach. Breakpoint/watch definitions are kept and re-armed on the next attach.";
             LOG.info("Detached from {}: {}", endpoint, reason);
             endpoint = null;
+            lastDetachedAt = System.currentTimeMillis();
             return text;
         }
     }
@@ -323,6 +330,7 @@ public final class JdiEngine implements CleanupCoordinator.Participant {
             notices.add(Text.formatTime(System.currentTimeMillis()) + " connection to " + endpoint + " lost: " + reason);
             LOG.info("JDWP connection to {} lost: {}", endpoint, reason);
             endpoint = null;
+            lastDetachedAt = System.currentTimeMillis();
         }
     }
 

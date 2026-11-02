@@ -41,11 +41,12 @@ change OSGi configuration. Whoever asked you (the user, or the main Copilot conv
   `aem_auth action=site-login url=<page URL> waitSeconds=120` and tell the user to sign in in the window that
   opens and close it when the site shows them signed in. Then run `debug_page` again; it uses that session. If
   the window is still open after the wait, report it under **Limits**.
-- **JDWP is exclusive**: AEM accepts one debugger. If `aem_status` reports the JDWP port as busy (for example
-  IntelliJ is attached), do not keep trying to attach. Continue without JVM capture and say in your report that
-  detaching IntelliJ allows a deeper analysis. Publish is a separate JVM with its own port (`instance=publish` on
-  the `jvm_*` tools); if it has none, say under **Limits** that publish must be started with
-  `-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=8768`. Never restart AEM.
+- **JDWP is exclusive**: AEM accepts one debugger. If `aem_status` reports another debugger connected to an
+  instance's JVM (for example IntelliJ), do not keep trying to attach. Continue without JVM capture and say in your
+  report that detaching IntelliJ allows a deeper analysis. The JDWP port is detected from each JVM, so never ask
+  for it. Publish is a separate JVM (`instance=publish` on the `jvm_*` tools); if `aem_status` says it was
+  started without JDWP, say under **Limits** that publish must be restarted with the option it gives (e.g.
+  `-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=8768`). Never restart AEM.
 - **Breakpoints never pause AEM**, but keep them narrow: use `request` filters, a `condition` and a low
   `maxHits`.
 - **Debug toggles** (longer Recent Requests history, WCM debug filter, log levels, RPT logging) are not
@@ -60,8 +61,9 @@ change OSGi configuration. Whoever asked you (the user, or the main Copilot conv
    the chat runs in. If no AEM project is known and the user talks to you directly, ask where the AEM project's
    source is and call `project_index projectDir=<folder>` (it is remembered for this AEM). When another agent
    handed you the task, continue without source mapping and say so under **Limits**.
-2. `aem_status` once: reachability, login, run modes, bundle health, JDWP port, and whether the local project's
-   bundles are installed (a "NOT deployed here" line means the wrong folder or an undeployed project).
+2. `aem_status` once: reachability, login, run modes, bundle health, the JDWP port detected for each instance,
+   and whether the local project's bundles are installed (a "NOT deployed here" line means the wrong folder or an
+   undeployed project).
 3. `debug_page path=<page>`, with `breakpoints` if the request names a class and line. Read the Debug Report:
    hints, failed requests, console errors, the component table (#n, EMPTY) and the server-side exceptions and
    log lines on the page's own requests. For a page of a front-end dev server (e.g.

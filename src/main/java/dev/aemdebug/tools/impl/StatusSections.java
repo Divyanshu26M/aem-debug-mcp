@@ -2,6 +2,7 @@ package dev.aemdebug.tools.impl;
 
 import dev.aemdebug.aem.AemInstance;
 import dev.aemdebug.aem.AuthManager;
+import dev.aemdebug.jdi.JdwpLocator;
 import dev.aemdebug.jdi.JdwpPortProbe;
 import dev.aemdebug.server.Services;
 
@@ -47,31 +48,35 @@ final class StatusSections {
         return sb.toString();
     }
 
-    /** One line about the JDWP endpoint of an instance. */
+    /**
+     * One line about the JDWP endpoint of an instance, read fresh from its JVM: where the port comes from, and
+     * whether a debugger can attach. Only ports that were not detected (set in this chat or configured) are probed.
+     */
     static String jdwp(Services s, AemInstance instance) {
-        String problem = JvmTools.endpointProblem(s, instance);
+        String attached = JdiStatus.attachedDescription(s, instance);
+        if (attached != null) {
+            return "- " + instance.name() + " " + s.jdi(instance.name()).endpoint() + ": " + attached + '\n';
+        }
+        JdwpLocator.Endpoint endpoint = s.jdwp.endpoint(instance, true);
+        String problem = endpoint.problem();
         if (problem != null) {
             return "- " + instance.name() + ": " + problem + '\n';
         }
-        int port = s.jdwpPort(instance.name());
-        String endpoint = instance.name() + " " + s.config.jdwpHost() + ":" + port;
-        String attached = JdiStatus.attachedDescription(s, instance);
-        if (attached != null) {
-            return "- " + endpoint + ": " + attached + '\n';
+        String head = "- " + instance.name() + " " + endpoint.address() + " (" + endpoint.origin() + ")";
+        String attach = "jvm_connection action=attach" + (instance.isAuthor() ? "" : " instance=" + instance.name())
+                + " (or debug_page) attaches on demand";
+        if (endpoint.source() == JdwpLocator.Source.DETECTED) {
+            return head + ": free - " + attach + '\n';
         }
-        JdwpPortProbe.Result result = JdwpPortProbe.probe(s.config.jdwpHost(), port, 1500);
+        JdwpPortProbe.Result result = JdwpPortProbe.probe(endpoint.host(), endpoint.port(), 1500);
         switch (result.state) {
             case LISTENING:
-                return "- " + endpoint + ": free - AEM accepts a debugger; jvm_connection action=attach"
-                        + (instance.isAuthor() ? "" : " instance=" + instance.name())
-                        + " (or debug_page) can attach on demand\n";
+                return head + ": free - a JDWP agent answers; " + attach + '\n';
             case NOT_ACCEPTING:
-                return "- " + endpoint + ": not accepting connections - either another debugger (e.g. IntelliJ "
-                        + "remote debug) is attached, or " + instance.name() + " was not started with "
-                        + "-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=" + port
-                        + ". Detach IntelliJ before using jvm_* tools.\n";
+                return head + ": not accepting connections - either another debugger (e.g. IntelliJ remote debug) "
+                        + "is attached, or " + instance.name() + " does not listen for debuggers on this port.\n";
             default:
-                return "- " + endpoint + ": " + result + '\n';
+                return head + ": " + result + '\n';
         }
     }
 

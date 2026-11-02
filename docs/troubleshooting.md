@@ -13,14 +13,38 @@ branch), or the project is not deployed on this instance. Use `project_index rem
 
 ## JVM debugging
 
-**"JDWP port ... refused the connection" or `aem_status` says the port is not accepting connections**
-- Another debugger is attached. JDWP accepts a single debugger. Stop IntelliJ's "Remote JVM Debug" session (or
-  any other debugger), then retry. When you are done, `jvm_connection action=detach` or `debug_cleanup` hands the
-  port back to IntelliJ.
-- AEM was not started with JDWP. Start it with
-  `-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=8767` (or set `AEM_JDWP_PORT` to your port).
-- Right after a probe or a detach the JVM needs a moment to reopen the port. The server retries briefly; if it
-  still fails, call `jvm_connection action=attach` again.
+**"... was started without JDWP"**
+The JVM that serves the instance's port has no JDWP agent, so no debugger can attach. Restart that instance with
+`-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=<port>` (the message suggests a free port; any free
+port works and is detected). Publish needs a port different from author's. Everything except JVM capture works
+without JDWP.
+
+**"Another debugger is connected to the ... JVM"**
+JDWP accepts a single debugger, and while one is connected the agent doesn't listen. It is IntelliJ's "Remote JVM
+Debug" session, or aem-debug in another chat; that one detaches on `debug_cleanup` there or after
+`AEM_DEBUG_IDLE_DETACH_MINUTES` without activity. Stop the other debugger, then retry. When you are done,
+`jvm_connection action=detach` or `debug_cleanup` hands the port back to IntelliJ.
+
+**"... has a JDWP agent that does not accept debuggers"**
+The JVM's JDWP agent connects out to a debugger instead of listening (`server=n`): typically an IDE started AEM in
+debug mode and is its debugger. To let aem-debug attach, start AEM with
+`-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=<port>` in place of that option, not in addition (a
+JVM loads only one JDWP agent). IntelliJ can then attach with a "Remote JVM Debug" configuration when the agent is
+free.
+
+**"JDWP port ... refused the connection"**
+The port was not detected from the JVM (the message says why, for example AEM runs in a container, in WSL or as
+another user), so the configured `AEM_JDWP_PORT` / `AEM_PUBLISH_JDWP_PORT` or a port set with `jvm_connection port=`
+was tried. Either another debugger is attached, or the instance does not listen for debuggers on that port. Set the
+right port, or `jvm_connection port=0` to forget a port given in the chat. Right after a detach the JVM needs a
+moment to reopen its port; the server retries briefly.
+
+**The JDWP port is not detected**
+`aem_status` shows why after "not detected:". Detection reads the JDWP agent's address through the JDK's Attach
+API, which needs a full JDK for the server and an AEM JVM of the same OS user. It cannot see AEM in a container,
+in WSL or under another user, or a JVM started with `-XX:+DisableAttachMechanism`. On Linux and macOS it skips JVMs
+started with `-Xrs`. `AEM_DEBUG_DETECT_JDWP=false` turns detection off. In all these cases the configured ports are
+used. See [JDWP port detection](setup.md#jdwp-port-detection).
 
 **"JVM debugging is not available" (`jdk.jdi` missing)**
 The server runs on a JRE or a trimmed runtime. Run it with a full JDK 17+ (`JAVA_HOME` pointing to a JDK).
@@ -42,11 +66,10 @@ It reached `maxHits` or fired too often per second (flood protection keeps AEM r
 It detaches after `AEM_DEBUG_IDLE_DETACH_MINUTES` (default 15, 0 = never) of inactivity so IntelliJ can
 reconnect. Long `debug_capture` sessions can be cut short by this.
 
-**"No JDWP port is configured for publish" or publish snapshots never appear**
-Publish runs in its own JVM. Restart publish with its own JDWP port, for example
-`-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=8768` (not author's 8767), and set
-`AEM_PUBLISH_JDWP_PORT` (the plugin uses 8768) or call `jvm_connection action=attach instance=publish port=8768`.
-Breakpoints, watches and snapshots are per instance: pass `instance=publish` to the `jvm_*` tools.
+**Publish snapshots never appear**
+Publish runs in its own JVM. `aem_status` says whether it was started with JDWP; if not, restart it with a port of
+its own, for example `-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=8768`. Breakpoints, watches and
+snapshots are per instance: pass `instance=publish` to the `jvm_*` tools.
 
 ## Login and access
 

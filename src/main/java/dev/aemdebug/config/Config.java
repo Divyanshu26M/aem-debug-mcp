@@ -16,9 +16,10 @@ import java.util.Map;
  * <pre>
  * AEM_AUTHOR_URL                 default http://localhost:4502
  * AEM_PUBLISH_URL                default http://localhost:4503
- * AEM_JDWP_HOST / AEM_JDWP_PORT  default 127.0.0.1 / 8767
+ * AEM_JDWP_HOST / AEM_JDWP_PORT  default 127.0.0.1 / 8767 (the port is a fallback: it is detected from the JVM)
  * AEM_PROJECT_DIR                a local AEM project folder (more via project_index, see ProjectIndexService)
- * AEM_PUBLISH_JDWP_PORT          JDWP port of publish (none by default: no JVM capture on publish)
+ * AEM_PUBLISH_JDWP_PORT          JDWP port of publish, a fallback like AEM_JDWP_PORT (none by default)
+ * AEM_DEBUG_DETECT_JDWP          detect the JDWP port from the JVM serving each instance (default true)
  * AEM_LOG_DIR                    crx-quickstart/logs (else detected from sling.home)
  * AEM_PUBLISH_LOG_DIR            the same for publish
  * AEM_DEV_SERVERS                local front-end dev servers and the AEM they proxy to, e.g. http://localhost:3000=publish
@@ -53,6 +54,7 @@ public final class Config {
     private final List<String> projectPackages;
     private final Map<String, String> devServers;
     private final boolean rememberLogins;
+    private final boolean detectJdwp;
     private final int idleDetachMinutes;
     private final int loginWaitSeconds;
     private final List<String> problems;
@@ -73,6 +75,7 @@ public final class Config {
         this.projectPackages = Collections.unmodifiableList(new ArrayList<>(b.projectPackages));
         this.devServers = Collections.unmodifiableMap(new LinkedHashMap<>(b.devServers));
         this.rememberLogins = b.rememberLogins;
+        this.detectJdwp = b.detectJdwp;
         this.idleDetachMinutes = b.idleDetachMinutes;
         this.loginWaitSeconds = b.loginWaitSeconds;
         this.problems = Collections.unmodifiableList(new ArrayList<>(b.problems));
@@ -135,6 +138,8 @@ public final class Config {
         b.loginWaitSeconds = intValue(env, "AEM_DEBUG_LOGIN_WAIT_SECONDS", 60, 0, 600, b.problems);
         String remember = value(env, "AEM_DEBUG_REMEMBER_LOGINS", "true").toLowerCase(Locale.ROOT);
         b.rememberLogins = !(remember.equals("false") || remember.equals("no") || remember.equals("0"));
+        String detect = value(env, "AEM_DEBUG_DETECT_JDWP", "true").toLowerCase(Locale.ROOT);
+        b.detectJdwp = !(detect.equals("false") || detect.equals("no") || detect.equals("0"));
         String devServers = value(env, "AEM_DEV_SERVERS", null);
         if (devServers != null) {
             parseDevServers(devServers, b);
@@ -256,6 +261,11 @@ public final class Config {
         return rememberLogins;
     }
 
+    /** Whether the JDWP port of an instance is read from the JVM that serves it (else only the configured ports). */
+    public boolean detectJdwp() {
+        return detectJdwp;
+    }
+
     public String user() {
         return user;
     }
@@ -298,7 +308,7 @@ public final class Config {
         return "Config{author=" + authorUrl + ", publish=" + publishUrl + ", jdwp=" + jdwpHost + ":" + jdwpPort
                 + ", publishJdwp=" + (publishJdwpPort < 0 ? "-" : String.valueOf(publishJdwpPort))
                 + ", projectDir=" + projectDir + ", logDir=" + logDir + ", publishLogDir=" + publishLogDir
-                + ", devServers=" + devServers + ", rememberLogins=" + rememberLogins
+                + ", devServers=" + devServers + ", rememberLogins=" + rememberLogins + ", detectJdwp=" + detectJdwp
                 + ", user=" + (user == null ? "-" : user)
                 + ", password=" + (password == null ? "-" : "****") + ", browserChannel="
                 + (browserChannel == null ? "auto" : browserChannel) + ", artifactsDir=" + artifactsDir
@@ -336,6 +346,7 @@ public final class Config {
         private final List<String> projectPackages = new ArrayList<>();
         private final Map<String, String> devServers = new LinkedHashMap<>();
         private boolean rememberLogins = true;
+        private boolean detectJdwp = true;
         private int idleDetachMinutes;
         private int loginWaitSeconds;
         private final List<String> problems = new ArrayList<>();
@@ -383,6 +394,11 @@ public final class Config {
 
         public Builder rememberLogins(boolean value) {
             this.rememberLogins = value;
+            return this;
+        }
+
+        public Builder detectJdwp(boolean value) {
+            this.detectJdwp = value;
             return this;
         }
 
