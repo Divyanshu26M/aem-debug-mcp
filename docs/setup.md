@@ -3,10 +3,12 @@
 ## Requirements
 
 - **JDK 17 or newer** to run the server. It must be a full JDK (the `jdk.jdi` module provides the debugger
-  interface); a JRE runs everything except the `jvm_*` tools. The build uses JDK 21.
+  interface, `jdk.attach` the JDWP port detection); a JRE runs everything except the `jvm_*` tools. The build uses
+  JDK 21.
 - **Microsoft Edge or Google Chrome** installed (rendering and the login window use the installed browser through
   Playwright; no browser download happens).
-- **A local AEM** (AEM as a Cloud Service SDK quickstart or AEM 6.5) started with JDWP if you want JVM snapshots:
+- **A local AEM** (AEM as a Cloud Service SDK quickstart or AEM 6.5) started with JDWP, on any free port, if you
+  want JVM snapshots:
 
   ```
   java -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=8767 -jar aem-sdk-author-p4502.jar -gui
@@ -14,9 +16,11 @@
 
   On JDK 9+ `address=8767` listens on localhost only, which is what you want.
 
-  Publish is a separate JVM. To capture exceptions and snapshots on publish too, start it with its own port, for
-  example `address=8768` (the plugin's `mcp.json` sets `AEM_PUBLISH_JDWP_PORT=8768`). Rendering, logs, content
-  reads and the Recent Requests console work on publish without JDWP.
+  Publish is a separate JVM. To capture exceptions and snapshots on publish too, start it with a port of its own,
+  for example `address=8768`. Rendering, logs, content reads and the Recent Requests console work on publish
+  without JDWP.
+
+  You don't have to configure these ports: the server detects them (see [JDWP port detection](#jdwp-port-detection)).
 
 ## Build
 
@@ -62,7 +66,8 @@ The plugin contains:
   Copilot-specific; the server and the skill also work in other clients.
 - `bin/aem-debug-mcp.cmd|sh` - launchers with a Java version check (for standalone use)
 
-Edit `plugin/mcp.json` (before installing) to change the AEM URLs, JDWP port or to add `AEM_PROJECT_DIR`.
+Edit `plugin/mcp.json` (before installing) to change the AEM URLs, the fallback JDWP ports or to add
+`AEM_PROJECT_DIR`.
 `java` must be a JDK 17+ on the `PATH`; otherwise replace `"command": "java"` with the full path of your JDK's
 `java` executable.
 
@@ -79,7 +84,6 @@ Edit `plugin/mcp.json` (before installing) to change the AEM URLs, JDWP port or 
       "args": ["-jar", "C:/tools/aem-debug-mcp/aem-debug-mcp.jar"],
       "env": {
         "AEM_AUTHOR_URL": "http://localhost:4502",
-        "AEM_JDWP_PORT": "8767",
         "AEM_PROJECT_DIR": "${workspaceFolder}"
       }
     }
@@ -98,7 +102,6 @@ Edit `plugin/mcp.json` (before installing) to change the AEM URLs, JDWP port or 
       "args": ["-jar", "C:/tools/aem-debug-mcp/aem-debug-mcp.jar"],
       "env": {
         "AEM_AUTHOR_URL": "http://localhost:4502",
-        "AEM_JDWP_PORT": "8767",
         "AEM_PROJECT_DIR": "C:/code/mysite"
       }
     }
@@ -119,8 +122,9 @@ All settings are environment variables of the MCP server process and are optiona
 |---|---|---|
 | `AEM_AUTHOR_URL` | `http://localhost:4502` | Author instance (must be localhost/127.0.0.1/::1) |
 | `AEM_PUBLISH_URL` | `http://localhost:4503` | Publish instance |
-| `AEM_JDWP_HOST` / `AEM_JDWP_PORT` | `127.0.0.1` / `8767` | JDWP endpoint of author (local only) |
-| `AEM_PUBLISH_JDWP_PORT` | none (plugin: `8768`) | JDWP port of publish; without it there is no JVM capture on publish |
+| `AEM_JDWP_HOST` / `AEM_JDWP_PORT` | `127.0.0.1` / `8767` | Host of the JDWP agents (local only) / author's JDWP port, used only when it cannot be [detected](#jdwp-port-detection) |
+| `AEM_PUBLISH_JDWP_PORT` | none (plugin: `8768`) | Publish's JDWP port, used only when it cannot be detected |
+| `AEM_DEBUG_DETECT_JDWP` | `true` | Detect each instance's JDWP port from the JVM that serves it; `false` = use only the ports above |
 | `AEM_PROJECT_DIR` | - | A local AEM project folder for source mapping (see [Local project](#local-project)) |
 | `AEM_LOG_DIR` | `<sling.home>/logs` | Where author's `error.log` is read from |
 | `AEM_PUBLISH_LOG_DIR` | `<sling.home>/logs` | Where publish's `error.log` is read from |
@@ -132,6 +136,41 @@ All settings are environment variables of the MCP server process and are optiona
 | `AEM_DEBUG_PROJECT_PACKAGES` | from the project index | Java packages watched for exceptions by default |
 | `AEM_DEBUG_IDLE_DETACH_MINUTES` | `15` | Idle time before JDWP detach and debug-toggle revert (0 = never) |
 | `AEM_DEBUG_LOGIN_WAIT_SECONDS` | `60` | How long a tool waits for the user to finish signing in |
+
+## JDWP port detection
+
+AEM can run with JDWP on any port; you don't have to tell the server which. For each instance it:
+
+1. looks up the process that listens on the instance's HTTP port (4502, 4503, or the port of `AEM_AUTHOR_URL` /
+   `AEM_PUBLISH_URL`) with the operating system's own tools: `netstat -ano` on Windows, `/proc/net/tcp` or `lsof` on
+   Linux, `lsof` on macOS;
+2. reads where that JVM's JDWP agent listens through the JDK's Attach API. The agent publishes its address as the
+   property `sun.jdwp.listenerAddress`; reading it does not connect a debugger.
+
+The answer is one of:
+
+- **listening on port N**: the `jvm_*` tools and `debug_page` attach there;
+- **another debugger is connected**: IntelliJ's "Remote JVM Debug", or aem-debug in another chat. The agent
+  doesn't listen while a debugger is connected, so stop that one first;
+- **a JDWP agent that does not accept debuggers** (`server=n`): an IDE started AEM in debug mode and is its
+  debugger. Start AEM with `server=y` in place of that option for aem-debug;
+- **started without JDWP**: the instance must be restarted with `-agentlib:jdwp=...` for JVM capture. The
+  configured port is not tried, because it belongs to another process or to nothing.
+
+`aem_status` and `jvm_connection action=status` show the result and where the port comes from (detected,
+configured or set in the chat). Precedence: a port given with `jvm_connection port=` in the chat (`port=0` forgets
+it), then the detected port, then `AEM_JDWP_PORT` / `AEM_PUBLISH_JDWP_PORT`. The configured ports are used only
+when detection cannot run, and the status says why, for example:
+
+- the server runs on a JRE without the `jdk.attach` module;
+- AEM runs as another OS user, in a container or in WSL (the process serving the port is not a JVM of this user);
+- AEM was started with `-XX:+DisableAttachMechanism`;
+- on Linux or macOS, AEM was started with `-Xrs`. The Attach API wakes the JVM with SIGQUIT, which such a JVM
+  doesn't handle, so it is never attached;
+- `AEM_DEBUG_DETECT_JDWP=false`.
+
+Each lookup is limited to a few seconds. The result is cached per process and read again after a failed attach,
+after a detach, or when another process serves the port (AEM restarted).
 
 ## Local project
 
@@ -184,9 +223,8 @@ Many dev servers answer every page URL with their own app shell (single-page app
 not rendered by AEM: there is no component map and no Request Progress Tracker for it. `components=true` maps
 components when the dev server proxies the page itself to AEM.
 
-**JVM capture on publish** needs publish started with JDWP on its own port (see [Requirements](#requirements)).
-Without `AEM_PUBLISH_JDWP_PORT`, `jvm_connection action=attach instance=publish port=<port>` sets the port for
-the current chat. All `jvm_*` tools take `instance=publish`.
+**JVM capture on publish** needs publish started with JDWP on a port of its own (see [Requirements](#requirements));
+the port is detected like author's. All `jvm_*` tools take `instance=publish`.
 
 ## Authentication
 

@@ -9,7 +9,7 @@ files under the artifacts directory.
 
 | Tool | What it does |
 |---|---|
-| `aem_status` | Setup check: author/publish reachability, login state, AEM version, run modes, sling.home and error.log location, bundle health, known front-end dev servers, the site session, and whether each instance's JDWP port is free or held by another debugger. Call it first. |
+| `aem_status` | Setup check: author/publish reachability, login state, AEM version, run modes, sling.home and error.log location, bundle health, known front-end dev servers, the site session, and each instance's JDWP port as detected from its JVM: free, held by another debugger, or started without JDWP. Call it first. |
 | `aem_auth` | `status`, `login` (opens a visible browser window on the AEM login page of author or publish; local admin or SSO; the login token is remembered for later chats in an owner-only file) and `logout`. `site-login` opens a visible window on a local site page for the site's own visitor login (external identity providers work); the captured cookies and storage of local origins stay in memory and are used by renders of publish and dev-server pages. `site-logout` forgets them. |
 
 ## Content and configuration (read-only)
@@ -55,12 +55,13 @@ after inactivity. Breakpoints never pause AEM: the hit thread is held only while
 are recorded, then resumed.
 
 Author and publish are separate JVMs. Every `jvm_*` tool takes `instance` (default author); breakpoints, watches
-and snapshots belong to that instance's JVM. Publish needs its own JDWP port (`AEM_PUBLISH_JDWP_PORT`, or
-`jvm_connection port=` for the current chat).
+and snapshots belong to that instance's JVM. Each instance's JDWP port is detected from the JVM that serves it, so
+any port works ([JDWP port detection](setup.md#jdwp-port-detection)); `AEM_JDWP_PORT` / `AEM_PUBLISH_JDWP_PORT`
+are fallbacks.
 
 | Tool | What it does |
 |---|---|
-| `jvm_connection` | `attach`, `detach` or `status` of the JDWP connection of an instance (author: `AEM_JDWP_HOST`:`AEM_JDWP_PORT`, default 127.0.0.1:8767; publish: `AEM_PUBLISH_JDWP_PORT`). `port` overrides the port for the current chat. |
+| `jvm_connection` | `attach`, `detach` or `status` of the JDWP connection of an instance. Status shows the detected port and where it comes from, or why there is none (started without JDWP, another debugger connected). `port` sets the port for the current chat instead; `port=0` forgets it. |
 | `jvm_breakpoint` | Snapshot breakpoints and logpoints. Location: `com.mysite.Foo:41`, `Foo.java:41` (resolved through the local project) or `com.mysite.Foo#method`. Options: `condition` (`title == null && count > 2`; operators `== != < > contains startsWith endsWith matches && || !`), `log` (logpoint message, e.g. `title={title}`), `request` (URI text, `^regex`, or `requests` for any request), `maxHits` (default 50, then the breakpoint disables itself). Breakpoints are re-armed when a bundle is redeployed. |
 | `jvm_exception_watch` | Captures exceptions at the throw site, including caught and swallowed ones, with stack, locals and the Sling request. Default scope: the project's packages plus `org.apache.sling.models` and `org.apache.sling.scripting.sightly`. |
 | `jvm_snapshots` | Lists (filter by source, request, kind or age), shows (`get`), expands objects from (`expand`) and clears captured snapshots. |

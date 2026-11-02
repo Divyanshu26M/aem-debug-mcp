@@ -17,6 +17,7 @@ import dev.aemdebug.logs.LogLocator;
 import dev.aemdebug.logs.LogService;
 import dev.aemdebug.jdi.JdiEngine;
 import dev.aemdebug.jdi.JdiSupport;
+import dev.aemdebug.jdi.JdwpLocator;
 import dev.aemdebug.mapping.ComponentMapper;
 import dev.aemdebug.project.ProjectIndexService;
 import dev.aemdebug.report.ArtifactStore;
@@ -29,7 +30,6 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 /** Composition root: all long-lived services, shared by the tools. */
 public final class Services {
@@ -55,9 +55,10 @@ public final class Services {
     public final ComponentMapper mapper;
     public final DevServers devServers;
     public final PageTargets pageTargets;
+    /** Where each instance's JDWP agent listens (detected from its JVM, else configured). */
+    public final JdwpLocator jdwp;
     /** One engine per AEM instance (author, publish); empty when the runtime has no jdk.jdi module. */
     private final Map<String, JdiEngine> jdiEngines = new LinkedHashMap<>();
-    private final Map<String, Integer> jdwpPortOverrides = new ConcurrentHashMap<>();
 
     public Services(Config config) {
         this.config = config;
@@ -87,6 +88,7 @@ public final class Services {
             jdiEngines.put("author", new JdiEngine(config.idleDetachMinutes(), "author"));
             jdiEngines.put("publish", new JdiEngine(config.idleDetachMinutes(), "publish"));
         }
+        this.jdwp = new JdwpLocator(config, jdiEngines::get, JdwpLocator.systemProbe());
         this.cleanup = new CleanupCoordinator();
         for (Map.Entry<String, JdiEngine> entry : jdiEngines.entrySet()) {
             this.cleanup.register("author".equals(entry.getKey()) ? entry.getValue() : quietWhenUnused(entry.getValue()));
@@ -112,16 +114,6 @@ public final class Services {
 
     public Collection<JdiEngine> jdiEngines() {
         return Collections.unmodifiableCollection(jdiEngines.values());
-    }
-
-    /** JDWP port of an instance: a port given to jvm_connection in this session, else the configuration; -1 if none. */
-    public int jdwpPort(String instance) {
-        Integer override = jdwpPortOverrides.get(instance);
-        return override != null ? override : config.jdwpPort(instance);
-    }
-
-    public void overrideJdwpPort(String instance, int port) {
-        jdwpPortOverrides.put(instance, port);
     }
 
     /** Cleanup of an engine that reports nothing while it was never attached and holds no definitions. */

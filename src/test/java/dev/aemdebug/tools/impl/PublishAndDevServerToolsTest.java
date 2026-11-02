@@ -48,9 +48,10 @@ class PublishAndDevServerToolsTest {
         ToolRegistry registry = registry();
 
         String status = call(registry, "jvm_connection", Map.of("action", "status", "instance", "publish")).allText();
-        assertThat(status).contains("### publish JVM (publish (no JDWP port))")
-                .contains("No JDWP port is configured for publish")
-                .contains("AEM_PUBLISH_JDWP_PORT=8768").contains("port=8768");
+        assertThat(status).contains("### publish JVM")
+                .contains("No JDWP port is known for publish (no process of this user listens on port 2")
+                .contains("set AEM_PUBLISH_JDWP_PORT").contains("instance=publish port=<port>")
+                .contains("address=8768");
 
         ToolResult breakpoint = call(registry, "jvm_breakpoint",
                 Map.of("location", "com.example.core.models.TeaserModel:41", "instance", "publish"));
@@ -68,8 +69,13 @@ class PublishAndDevServerToolsTest {
         ToolResult attach = call(registry, "jvm_connection",
                 Map.of("action", "attach", "instance", "publish", "port", 1, "timeoutSeconds", 1));
         assertThat(attach.isError()).isTrue();
-        assertThat(services.jdwpPort("publish")).isEqualTo(1);
-        assertThat(services.jdwpPort("author")).isEqualTo(1);
+        assertThat(attach.allText()).contains("set with jvm_connection port= in this chat")
+                .contains("jvm_connection port=0 forgets this port");
+        assertThat(services.jdwp.override("publish")).isEqualTo(1);
+        assertThat(services.jdwp.override("author")).isNull();
+        assertThat(call(registry, "jvm_connection", Map.of("action", "status", "instance", "publish", "port", 0))
+                .allText()).contains("Forgot the port given earlier");
+        assertThat(services.jdwp.override("publish")).isNull();
 
         String cleanup = call(registry, "debug_cleanup", Map.of()).allText();
         assertThat(cleanup).contains("JVM debugging (publish): removed 1 breakpoint");

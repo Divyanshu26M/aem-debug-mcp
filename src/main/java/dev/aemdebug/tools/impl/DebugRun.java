@@ -9,6 +9,7 @@ import dev.aemdebug.jdi.BreakpointSpec;
 import dev.aemdebug.jdi.ExceptionWatchSpec;
 import dev.aemdebug.jdi.JdiEngine;
 import dev.aemdebug.jdi.JdiSupport;
+import dev.aemdebug.jdi.JdwpLocator;
 import dev.aemdebug.jdi.Snapshot;
 import dev.aemdebug.logs.LogEntry;
 import dev.aemdebug.logs.LogService;
@@ -133,18 +134,20 @@ final class DebugRun {
             jvmNotes.add("JVM capture unavailable: " + JdiSupport.unavailableMessage());
             return;
         }
-        String problem = JvmTools.endpointProblem(s, instance);
-        if (problem != null) {
-            jvmNotes.add("JVM capture skipped: " + problem);
-            return;
-        }
         if (!engine.isAttached()) {
+            JdwpLocator.Endpoint endpoint = s.jdwp.endpoint(instance, false);
+            String problem = endpoint.problem();
+            if (problem != null) {
+                jvmNotes.add("JVM capture skipped: " + problem);
+                return;
+            }
             try {
-                context.progress("Attaching to JDWP " + JvmTools.endpoint(s, instance));
-                JvmTools.attach(s, instance, 5000);
-                jvmNotes.add("Attached to the " + instance.name() + " JVM at " + engine.endpoint() + "; it stays "
-                        + "attached until jvm_connection action=detach, debug_cleanup or the idle timeout (IntelliJ "
-                        + "cannot attach meanwhile).");
+                context.progress("Attaching to JDWP " + instance.name() + " " + endpoint.label());
+                String attached = JvmTools.attach(s, instance, 5000);
+                jvmNotes.add("Attached to the " + instance.name() + " JVM at " + engine.endpoint()
+                        + (attached.contains("The port was detected") ? " (port detected from the JVM)" : "")
+                        + "; it stays attached until jvm_connection action=detach, debug_cleanup or the idle timeout "
+                        + "(IntelliJ cannot attach meanwhile).");
             } catch (ToolException e) {
                 jvmNotes.add("JVM capture skipped: " + e.getMessage());
                 return;

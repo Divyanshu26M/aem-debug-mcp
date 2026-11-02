@@ -65,6 +65,7 @@ class ConfigTest {
         assertThat(defaults.logDir("publish")).isNull();
         assertThat(defaults.devServers()).isEmpty();
         assertThat(defaults.rememberLogins()).isTrue();
+        assertThat(defaults.detectJdwp()).isTrue();
 
         Map<String, String> env = new HashMap<>();
         env.put("AEM_PUBLISH_JDWP_PORT", "8768");
@@ -72,7 +73,9 @@ class ConfigTest {
         env.put("AEM_PUBLISH_LOG_DIR", "/aem/publish/crx-quickstart/logs");
         env.put("AEM_DEV_SERVERS", "http://localhost:3000=publish, http://127.0.0.1:5173=Author");
         env.put("AEM_DEBUG_REMEMBER_LOGINS", "false");
+        env.put("AEM_DEBUG_DETECT_JDWP", "no");
         Config config = Config.fromEnvironment(env);
+        assertThat(config.detectJdwp()).isFalse();
         assertThat(config.jdwpPort("publish")).isEqualTo(8768);
         assertThat(config.jdwpPort("author")).isEqualTo(8767);
         assertThat(config.logDir("publish").toString().replace('\\', '/')).endsWith("publish/crx-quickstart/logs");

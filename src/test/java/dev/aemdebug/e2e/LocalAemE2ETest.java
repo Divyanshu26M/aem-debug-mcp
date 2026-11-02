@@ -4,6 +4,7 @@ import dev.aemdebug.aem.AemInstance;
 import dev.aemdebug.config.Config;
 import dev.aemdebug.jdi.BreakpointSpec;
 import dev.aemdebug.jdi.JdiEngine;
+import dev.aemdebug.jdi.JdwpLocator;
 import dev.aemdebug.jdi.JdwpPortProbe;
 import dev.aemdebug.jdi.Snapshot;
 import dev.aemdebug.server.Services;
@@ -94,12 +95,18 @@ class LocalAemE2ETest {
     void snapshotOnARealSlingRequestCarriesTheRequestThreadName() throws Exception {
         JdiEngine engine = services.jdi("author");
         assumeTrue(engine != null, "jdk.jdi not available");
-        JdwpPortProbe.Result probe = JdwpPortProbe.probe(config.jdwpHost(), config.jdwpPort(), 1500);
-        FINDINGS.put("JDWP probe", String.valueOf(probe));
-        assumeTrue(probe.state == JdwpPortProbe.State.LISTENING, "JDWP port not free (IntelliJ attached?): " + probe);
-        Thread.sleep(500);
+        JdwpLocator.Endpoint endpoint = services.jdwp.endpoint(services.instances.author(), true);
+        FINDINGS.put("JDWP endpoint", endpoint.label() + " - " + endpoint.origin());
+        assumeTrue(endpoint.attachable(), "JVM not attachable: " + endpoint.problem());
+        if (endpoint.source() != JdwpLocator.Source.DETECTED) {
+            JdwpPortProbe.Result probe = JdwpPortProbe.probe(endpoint.host(), endpoint.port(), 1500);
+            FINDINGS.put("JDWP probe", String.valueOf(probe));
+            assumeTrue(probe.state == JdwpPortProbe.State.LISTENING, "JDWP port not free (IntelliJ attached?): " + probe);
+            Thread.sleep(500);
+        }
+        int port = endpoint.port();
         try {
-            attach(engine);
+            attach(engine, port);
             BreakpointSpec spec = BreakpointSpec.parse(
                     "org.apache.sling.engine.impl.SlingRequestProcessorImpl#doProcessRequest");
             spec.maxHits = 3;
@@ -169,11 +176,11 @@ class LocalAemE2ETest {
         return text;
     }
 
-    private static void attach(JdiEngine engine) throws InterruptedException {
+    private static void attach(JdiEngine engine, int port) throws InterruptedException {
         long deadline = System.currentTimeMillis() + 10_000;
         while (true) {
             try {
-                FINDINGS.put("attach", engine.attach(config.jdwpHost(), config.jdwpPort(), 5000));
+                FINDINGS.put("attach", engine.attach(config.jdwpHost(), port, 5000));
                 return;
             } catch (ToolException e) {
                 if (System.currentTimeMillis() > deadline) {

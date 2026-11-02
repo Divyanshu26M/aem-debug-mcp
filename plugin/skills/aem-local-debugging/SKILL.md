@@ -23,9 +23,10 @@ the evidence and the file and line to fix, and you then make the fix here.
   ask for passwords in chat and never put credentials in tool arguments.
 - **JDWP is exclusive**: AEM accepts one debugger. Before `jvm_connection` / `jvm_breakpoint` /
   `jvm_exception_watch` / `debug_page` with JVM capture, make sure IntelliJ (or another debugger) is detached -
-  `aem_status` tells you if the port is busy. When done, `jvm_connection action=detach` (or `debug_cleanup`)
-  hands the port back. The server auto-detaches after inactivity. Author and publish are separate JVMs: the
-  `jvm_*` tools take `instance=publish`, and publish needs its own JDWP port.
+  `aem_status` tells you if another debugger is connected. When done, `jvm_connection action=detach` (or
+  `debug_cleanup`) hands the port back. The server auto-detaches after inactivity. Author and publish are separate
+  JVMs: the `jvm_*` tools take `instance=publish`. The JDWP port is detected from each JVM, so never ask the user
+  for it; if `aem_status` says an instance was started without JDWP, tell the user the restart option it gives.
 - Breakpoints never pause AEM: they take a snapshot (stack, locals, `this`) and resume immediately.
 - **Never call `aem_debug_toggle` with `confirm=true` unless the user explicitly approved that exact change**
   in this conversation. Prefer `action=plan` first and show the user what would change.
@@ -39,7 +40,8 @@ the evidence and the file and line to fix, and you then make the fix here.
    several repositories deployed into the same AEM) and call `project_index projectDir=<folder>` for each. The
    answer is remembered for this AEM, so later chats do not ask again. Without a project everything still
    works, but nothing links to source files.
-2. `aem_status` - reachability, login state, AEM version, run modes, log location, bundle health, JDWP port, and
+2. `aem_status` - reachability, login state, AEM version, run modes, log location, bundle health, the JDWP port
+   detected for each instance (free, another debugger connected, or started without JDWP), and
    whether the local project's bundles are installed (a "NOT deployed here" line means the wrong folder or an
    undeployed project: tell the user).
 3. Reproduce with `debug_page path=/content/...` - one call renders the page (screenshot, console errors,
@@ -77,9 +79,10 @@ AEM author UI, then `debug_capture action=stop` for the per-request report.
   and ask the user to sign in in the window that opens (any login flow, including an external identity
   provider) and close it when the site shows them signed in. Then re-run: publish and dev-server renders use the
   site session automatically (`session=none` renders anonymously). It stays in memory only.
-- **JVM capture on publish** needs publish started with its own JDWP port (e.g. `address=8768`). If the report
-  says JVM capture was skipped for publish, tell the user the exact start option; never restart AEM yourself.
-  The report still has error.log and RPT without it.
+- **JVM capture on publish** needs publish started with JDWP on a port of its own (e.g. `address=8768`); the port
+  is detected. If the report says JVM capture was skipped because publish was started without JDWP, tell the user
+  the exact start option from the message; never restart AEM yourself. The report still has error.log and RPT
+  without it.
 
 ## Recipes
 

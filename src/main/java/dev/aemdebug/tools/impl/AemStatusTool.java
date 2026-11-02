@@ -37,13 +37,15 @@ public final class AemStatusTool extends AbstractTool {
                 "Checks the local AEM debugging setup: reachability of author/publish, authentication state, AEM "
                         + "version, run modes, sling.home and error.log location, bundle health, the local AEM project "
                         + "in use (and, when logged in, whether its bundles are installed), known front-end dev servers, "
-                        + "the site visitor session, and whether the JDWP debug port of each instance is free or held "
-                        + "by another debugger (e.g. IntelliJ). Call this first, after project_index "
-                        + "workspace=<your working folder>. Read-only; it only opens the AEM login window when login=true.",
+                        + "the site visitor session, and for each instance the JDWP port detected from its JVM: free, "
+                        + "held by another debugger (e.g. IntelliJ), or started without JDWP. Call this first, after "
+                        + "project_index workspace=<your working folder>. Read-only; it only opens the AEM login window "
+                        + "when login=true.",
                 Schema.object()
                         .enumStr("instance", "Instance to check (default all configured)", "author", "publish", "all")
                         .bool("login", "Open the interactive AEM login window if not authenticated (default false)")
-                        .bool("checkJdwp", "Probe the JDWP port (default true)"));
+                        .bool("checkJdwp", "Check JVM debugging: detect each instance's JDWP port from its JVM and "
+                                + "whether a debugger can attach (default true)"));
         this.s = services;
     }
 
