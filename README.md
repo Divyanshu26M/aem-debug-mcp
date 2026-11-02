@@ -1,9 +1,10 @@
 # aem-debug-mcp
 
-An MCP server, shipped as a GitHub Copilot plugin, that lets an AI agent debug **local** AEM development end to
-end. The agent renders pages on your local AEM SDK, maps what it sees to components and source files, reads
-content and OSGi configuration, and captures JVM state over JDWP. Everything is matched to the HTTP request
-that produced the page, so you no longer paste screenshots, logs or variable values into the chat.
+aem-debug-mcp gives your AI assistant the four views of a **local** AEM bug: the rendered page, the components and
+content behind it, the logs of that request, and the JVM state, joined per HTTP request. The agent collects them
+itself, so you no longer paste screenshots, logs or variable values into the chat. It's an MCP server that installs
+as a GitHub Copilot plugin or runs standalone in other MCP clients, for a local AEM SDK or AEM 6.5 (author and
+publish) and the front-end dev servers that proxy to them.
 
 ```
 browser render ──► component map ──► Sling Models / HTL / local source
@@ -20,8 +21,8 @@ browser render ──► component map ──► Sling Models / HTL / local sour
 Local AEM debugging spans the browser, CRXDE Lite, the Felix web console, error.log, Recent Requests and IntelliJ's
 debugger. AI assistants see your code, and with browser tools the page, but not the AEM side behind it.
 
-- **Four views, joined per request**: the rendered page, the components and content behind it, the logs of that
-  request and the JVM state, matched to the HTTP request that produced them.
+- **Joined per request**: Sling names each request thread after its request, so what happened on the server is
+  matched to the browser request that caused it, and other traffic is set aside.
 - **A tool for your assistant, not another assistant**: it plugs into GitHub Copilot or another MCP client such as
   Claude Code, alongside browser tools, IntelliJ IDEA's debugger and Adobe's AEM MCP server.
 - **AEM keeps running**: snapshot breakpoints and exception watches record the stack and variables, and the thread
@@ -185,10 +186,13 @@ docs/         why (use cases, comparison), setup, tools, troubleshooting, spike 
 This is an MVP. Verified on a real local AEM author: the login window, `debug_page` (JDWP attach, temporary
 exception watch, component location, error.log lines matched to the page's own requests), `page_component_map`,
 `aem_page_context`, `component_inspect`, `page_render`, `aem_get_resource`, `aem_osgi_status`,
-`aem_get_osgi_config` and `aem_logs`. JDWP port detection was checked on a local author (port detected from its
-JVM) and publish (reported as started without JDWP). Not yet verified on a real page: `aem_debug_toggle`,
-breakpoint and exception snapshots in project code, linking components to local source files, `debug_capture`,
-`aem_query`, `aem_resolve`, `aem_recent_requests`, and the newer publish JVM capture and site login window.
+`aem_get_osgi_config` and `aem_logs`. Verified on a local publish and a React dev server that proxies to it: the
+AEM login window on publish, AEM logins remembered for later chats (reused on author and publish), rendering
+publish pages, and `debug_page` on dev-server pages (the calls that reached publish, with their error.log lines).
+JDWP port detection was checked on a local author (port detected from its JVM) and publish (reported as started
+without JDWP). Not yet verified on a real page: `aem_debug_toggle`, breakpoint and exception snapshots in project
+code, linking components to local source files, `debug_capture`, `aem_query`, `aem_resolve`, `aem_recent_requests`
+(the Request Progress Tracker, also in `debug_page`), and the newer publish JVM capture and site login window.
 Interactive suspend/step debugging and a companion OSGi bundle are planned for later phases. See
 [docs/spike-findings.md](docs/spike-findings.md) and [docs/troubleshooting.md](docs/troubleshooting.md).
 
