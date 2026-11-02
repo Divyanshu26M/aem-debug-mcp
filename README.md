@@ -15,6 +15,29 @@ browser render ──► component map ──► Sling Models / HTL / local sour
               └─ Request Progress Tracker of that request
 ```
 
+## Why aem-debug-mcp
+
+Local AEM debugging spans the browser, CRXDE Lite, the Felix web console, error.log, Recent Requests and IntelliJ's
+debugger. AI assistants see your code, and with browser tools the page, but not the AEM side behind it.
+
+- **Four views, joined per request**: the rendered page, the components and content behind it, the logs of that
+  request and the JVM state, matched to the HTTP request that produced them.
+- **A tool for your assistant, not another assistant**: it plugs into GitHub Copilot or another MCP client such as
+  Claude Code, alongside browser tools, IntelliJ IDEA's debugger and Adobe's AEM MCP server.
+- **AEM keeps running**: snapshot breakpoints and exception watches record the stack and variables, and the thread
+  continues.
+- **Safe for an agent to drive**: local instances only, read-only, and passwords never go through the chat.
+
+| To find out… | By hand | With aem-debug-mcp |
+|---|---|---|
+| Which component produced part of the page | DevTools and CRXDE Lite | Numbered components on the screenshot, with Sling Model, HTL and source |
+| What the server logged for one page load | Tail and grep error.log | The error.log lines and Request Progress Tracker of that page's requests |
+| A variable's value during a request | A breakpoint that pauses AEM | A snapshot, while AEM keeps running |
+| Whether your fix is deployed | Bundles in the Felix web console | `jvm_classes` compares the running class with your build |
+
+[docs/why.md](docs/why.md) walks through use cases and compares aem-debug-mcp with GitHub Copilot, Claude Code,
+Adobe's AEM MCP server and other tools.
+
 ## What it does
 
 - **Render and see**: headless Edge/Chrome renders the page as a visitor sees it. You get a screenshot, the HTTP
@@ -154,7 +177,7 @@ src/main/java/dev/aemdebug/
 fixture-app/  tiny JVM app used by the JDI tests
 plugin/       Copilot plugin: plugin.json, mcp.json, skills/aem-local-debugging,
               com.github.copilot/agents/aem-debugger, launchers
-docs/         setup, tools, troubleshooting, spike findings
+docs/         why (use cases, comparison), setup, tools, troubleshooting, spike findings
 ```
 
 ## Status and limits
