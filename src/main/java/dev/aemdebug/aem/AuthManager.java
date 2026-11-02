@@ -14,9 +14,10 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Authentication against local AEM. Order: existing in-memory session, AEM_USER/AEM_PASSWORD (programmatic
- * j_security_check), then an interactive visible login window (local admin or SSO) whose {@code login-token}
- * cookie is captured in memory only. Secrets are never logged, persisted or returned.
+ * Authentication against local AEM. Order: existing session (in memory, or remembered from an earlier chat in an
+ * owner-only file), AEM_USER/AEM_PASSWORD (programmatic j_security_check), then an interactive visible login window
+ * (local admin or SSO) whose {@code login-token} cookie is captured. Passwords are never stored; tokens are never
+ * logged or returned. At most one login window is open per instance, however many tools wait for it.
  */
 public final class AuthManager {
 
@@ -29,7 +30,7 @@ public final class AuthManager {
 
     /** How the current session was obtained. */
     public enum Method {
-        CREDENTIALS, INTERACTIVE, EXISTING
+        CREDENTIALS, INTERACTIVE, EXISTING, REMEMBERED
     }
 
     /** Opens the visible login window; implemented by the browser engine. */
@@ -121,17 +122,95 @@ public final class AuthManager {
     private final Config config;
     private final AemHttpClient http;
     private final CookieJar cookies;
+    private final LoginStore store;
     private volatile LoginLauncher launcher;
     private final Map<String, Session> sessions = new ConcurrentHashMap<>();
     private final Map<String, PendingLogin> pending = new ConcurrentHashMap<>();
     private final Map<String, String> lastErrors = new ConcurrentHashMap<>();
+    private final Map<String, Object> locks = new ConcurrentHashMap<>();
+    /** Per origin: the last remembered token AEM rejected, so it is not loaded again if it could not be removed. */
+    private final Map<String, String> rejectedTokens = new ConcurrentHashMap<>();
+    private final java.util.Set<String> unverifiedRemembered = ConcurrentHashMap.newKeySet();
     private final List<java.util.function.Consumer<AemInstance>> loginListeners =
             new java.util.concurrent.CopyOnWriteArrayList<>();
 
     public AuthManager(Config config, AemHttpClient http) {
+        this(config, http, LoginStore.disabled());
+    }
+
+    public AuthManager(Config config, AemHttpClient http, LoginStore store) {
         this.config = config;
         this.http = http;
         this.cookies = http.cookies();
+        this.store = store;
+    }
+
+    private Object lock(String origin) {
+        return locks.computeIfAbsent(origin, k -> new Object());
+    }
+
+    public LoginStore store() {
+        return store;
+    }
+
+    /**
+     * Without a token in memory, loads the login remembered by this or another chat (a running chat also picks up a
+     * login made meanwhile in another chat); it is verified on first use.
+     */
+    private void restoreRemembered(AemInstance instance) {
+        String origin = instance.origin();
+        if (!store.enabled() || cookies.has(origin, LOGIN_TOKEN)) {
+            return;
+        }
+        String token = store.token(origin);
+        if (token == null || token.equals(rejectedTokens.get(origin))) {
+            return;
+        }
+        synchronized (lock(origin)) {
+            if (!cookies.has(origin, LOGIN_TOKEN)) {
+                // A session whose token is gone (AEM cleared it) is stale: the restored token gets verified first.
+                sessions.remove(origin);
+                cookies.put(origin, LOGIN_TOKEN, token);
+                unverifiedRemembered.add(origin);
+            }
+        }
+    }
+
+    private void remember(AemInstance instance, String user) {
+        store.save(instance.origin(), user, cookies.get(instance.origin(), LOGIN_TOKEN));
+    }
+
+    /** The login token this server sends to the instance (memory only), or null. */
+    String token(AemInstance instance) {
+        return cookies.get(instance.origin(), LOGIN_TOKEN);
+    }
+
+    /** Called under the origin lock when AEM rejected {@code token}: forgets it, in memory and remembered. */
+    private void forgetRejected(String origin, String token) {
+        sessions.remove(origin);
+        unverifiedRemembered.remove(origin);
+        cookies.remove(origin, LOGIN_TOKEN);
+        if (token != null) {
+            rejectedTokens.put(origin, token);
+            store.removeIfToken(origin, token);
+        }
+    }
+
+    /**
+     * AEM asked for a login although {@code token} was sent: it expired or was revoked. Forgets it (in memory and
+     * remembered) unless a newer login has replaced it meanwhile. AEM usually clears the cookie in the same response,
+     * so the token is passed in rather than read from the cookie jar.
+     */
+    public void sessionRejected(AemInstance instance, String token) {
+        String origin = instance.origin();
+        synchronized (lock(origin)) {
+            String current = cookies.get(origin, LOGIN_TOKEN);
+            if (current != null && !current.equals(token)) {
+                return;
+            }
+            LOG.info("AEM {} rejected the session token; a new login is needed", instance.name());
+            forgetRejected(origin, token);
+        }
     }
 
     /** Called (on the calling thread) whenever a new session has been established for an instance. */
@@ -164,23 +243,46 @@ public final class AuthManager {
 
     /** Current AEM user for the stored session, or null when anonymous / not logged in. */
     public String currentUser(AemInstance instance) {
+        return checkUser(instance).user;
+    }
+
+    /** Who AEM says the stored session belongs to. */
+    private static final class UserCheck {
+        static final UserCheck ANONYMOUS = new UserCheck(null, true);
+        static final UserCheck UNKNOWN = new UserCheck(null, false);
+
+        /** The authenticated user, or null. */
+        final String user;
+        /** AEM answered and treated the request as anonymous: the token is not (or no longer) accepted. */
+        final boolean rejected;
+
+        UserCheck(String user, boolean rejected) {
+            this.user = user;
+            this.rejected = rejected;
+        }
+    }
+
+    private UserCheck checkUser(AemInstance instance) {
         RequestOptions options = RequestOptions.defaults().withoutRedirects()
                 .withTimeout(java.time.Duration.ofSeconds(10));
         try {
             AemResponse response = http.get(instance, CURRENT_USER, options);
             if (response.ok() && response.contentType().contains("json")) {
                 String user = Json.asString(response.jsonObject().get("authorizableId"));
-                return isAnonymous(user) ? null : user;
+                return isAnonymous(user) ? UserCheck.ANONYMOUS : new UserCheck(user, false);
             }
             AemResponse info = http.get(instance, SESSION_INFO, options);
             if (info.ok() && info.contentType().contains("json")) {
                 String user = Json.asString(info.jsonObject().get("userID"));
-                return isAnonymous(user) ? null : user;
+                return isAnonymous(user) ? UserCheck.ANONYMOUS : new UserCheck(user, false);
+            }
+            if (response.isLoginRequired() || response.status() == 403) {
+                return UserCheck.ANONYMOUS;
             }
         } catch (IllegalArgumentException e) {
             LOG.debug("Unexpected current user response: {}", e.getMessage());
         }
-        return null;
+        return UserCheck.UNKNOWN;
     }
 
     private static boolean isAnonymous(String user) {
@@ -189,18 +291,37 @@ public final class AuthManager {
 
     public Status status(AemInstance instance, boolean verify) {
         String origin = instance.origin();
+        restoreRemembered(instance);
         Session session = sessions.get(origin);
+        boolean rememberedVerified = false;
         if (verify && cookies.has(origin, LOGIN_TOKEN)) {
-            String user = currentUser(instance);
-            if (user == null) {
-                sessions.remove(origin);
-                cookies.remove(origin, LOGIN_TOKEN);
-                session = null;
-            } else if (session == null || !user.equals(session.user)) {
-                session = new Session(user, session == null ? Method.EXISTING : session.method,
-                        System.currentTimeMillis());
-                sessions.put(origin, session);
+            String checkedToken = cookies.get(origin, LOGIN_TOKEN);
+            UserCheck check = checkUser(instance);
+            String user = check.user;
+            synchronized (lock(origin)) {
+                String current = cookies.get(origin, LOGIN_TOKEN);
+                if (current != null && !current.equals(checkedToken)) {
+                    // A login completed while the old token was checked: the answer is about a token gone already.
+                    session = sessions.get(origin);
+                } else if (current == null || check.rejected) {
+                    // Rejected, or AEM cleared the cookie (Set-Cookie with Max-Age=0) while answering.
+                    forgetRejected(origin, checkedToken);
+                    session = null;
+                } else if (user == null) {
+                    // AEM did not answer clearly (starting up, 5xx): keep the token, report no verified session.
+                    session = sessions.get(origin);
+                } else if (session == null || !user.equals(session.user)) {
+                    rememberedVerified = unverifiedRemembered.remove(origin);
+                    Method method = rememberedVerified ? Method.REMEMBERED
+                            : session == null ? Method.EXISTING : session.method;
+                    session = new Session(user, method, System.currentTimeMillis());
+                    sessions.put(origin, session);
+                }
             }
+        }
+        if (rememberedVerified) {
+            LOG.info("Using the remembered login for {} as {}", instance.name(), session.user);
+            notifyLogin(instance);
         }
         PendingLogin login = pending.get(origin);
         return new Status(instance.name(), session == null ? null : session.user,
@@ -219,18 +340,17 @@ public final class AuthManager {
 
     public Status ensureSession(ToolContext context, AemInstance instance, int waitSeconds, boolean forceInteractive) {
         String origin = instance.origin();
+        restoreRemembered(instance);
         consumeCompletedLogin(instance);
         if (!forceInteractive && cookies.has(origin, LOGIN_TOKEN)) {
             Session existing = sessions.get(origin);
             if (existing != null) {
                 return status(instance, false);
             }
-            String user = currentUser(instance);
-            if (user != null) {
-                sessions.put(origin, new Session(user, Method.EXISTING, System.currentTimeMillis()));
-                return status(instance, false);
+            Status verified = status(instance, true);
+            if (verified.authenticated()) {
+                return verified;
             }
-            cookies.remove(origin, LOGIN_TOKEN);
         }
         if (!forceInteractive && config.hasCredentials()) {
             context.progress("Logging in to AEM " + instance.name() + " with AEM_USER");
@@ -247,28 +367,32 @@ public final class AuthManager {
         if (login.isOpen()) {
             throw new AuthPendingException("AEM " + instance.name() + " needs a login. A browser window is open at "
                     + instance.url(LOGIN_PAGE) + " - ask the user to sign in there (local admin or SSO), "
-                    + "then retry this tool. Nothing is stored on disk; the session lives in memory only.");
+                    + "then retry this tool."
+                    + (store.enabled() ? " The login is remembered (owner-only file) for later chats."
+                    : " The session lives in memory only."));
         }
         throw new AuthPendingException("Login to AEM " + instance.name() + " did not complete" + reason
                 + ". Run aem_auth with action=login to open the login window again, or configure AEM_USER/AEM_PASSWORD"
                 + " in the MCP server environment.");
     }
 
-    /** Starts (or reuses) the interactive login window without waiting. */
+    /** Starts the interactive login window, or returns the one already open for this instance, without waiting. */
     public PendingLogin startInteractiveLogin(AemInstance instance) {
         String origin = instance.origin();
-        PendingLogin existing = pending.get(origin);
-        if (existing != null && existing.isOpen()) {
-            return existing;
+        PendingLogin login;
+        synchronized (lock(origin)) {
+            PendingLogin existing = pending.get(origin);
+            if (existing != null && existing.isOpen()) {
+                return existing;
+            }
+            login = new PendingLogin();
+            pending.put(origin, login);
         }
         LoginLauncher current = launcher;
-        PendingLogin login = new PendingLogin();
         if (current == null) {
             login.fail("no browser available for interactive login");
-            pending.put(origin, login);
             return login;
         }
-        pending.put(origin, login);
         try {
             current.openLoginWindow(instance, instance.url(LOGIN_PAGE), login);
         } catch (RuntimeException e) {
@@ -301,23 +425,28 @@ public final class AuthManager {
     /** Moves a token captured by the login window into the cookie jar and verifies it. */
     public boolean consumeCompletedLogin(AemInstance instance) {
         String origin = instance.origin();
-        PendingLogin login = pending.get(origin);
-        if (login == null || !login.isCompleted()) {
-            return hasSession(instance);
+        String user;
+        synchronized (lock(origin)) {
+            PendingLogin login = pending.get(origin);
+            if (login == null || !login.isCompleted()) {
+                return hasSession(instance);
+            }
+            String token = login.takeToken();
+            if (token != null) {
+                cookies.put(origin, LOGIN_TOKEN, token);
+                unverifiedRemembered.remove(origin);
+            }
+            pending.remove(origin);
+            user = currentUser(instance);
+            if (user == null) {
+                cookies.remove(origin, LOGIN_TOKEN);
+                lastErrors.put(origin, "login token captured but AEM did not accept it");
+                return false;
+            }
+            sessions.put(origin, new Session(user, Method.INTERACTIVE, System.currentTimeMillis()));
+            lastErrors.remove(origin);
+            remember(instance, user);
         }
-        String token = login.takeToken();
-        if (token != null) {
-            cookies.put(origin, LOGIN_TOKEN, token);
-        }
-        pending.remove(origin);
-        String user = currentUser(instance);
-        if (user == null) {
-            cookies.remove(origin, LOGIN_TOKEN);
-            lastErrors.put(origin, "login token captured but AEM did not accept it");
-            return false;
-        }
-        sessions.put(origin, new Session(user, Method.INTERACTIVE, System.currentTimeMillis()));
-        lastErrors.remove(origin);
         LOG.info("Interactive login completed for {} as {}", instance.name(), user);
         notifyLogin(instance);
         return true;
@@ -356,16 +485,20 @@ public final class AuthManager {
         }
         sessions.put(origin, new Session(user, Method.CREDENTIALS, System.currentTimeMillis()));
         lastErrors.remove(origin);
+        unverifiedRemembered.remove(origin);
+        remember(instance, user);
         LOG.info("Logged in to {} as {} using AEM_USER", instance.name(), user);
         notifyLogin(instance);
         return true;
     }
 
-    /** Forgets the in-memory session (does not touch AEM). */
+    /** Forgets the session, in memory and remembered on disk (does not touch AEM). */
     public void logout(AemInstance instance) {
         String origin = instance.origin();
         sessions.remove(origin);
         cookies.clear(origin);
+        unverifiedRemembered.remove(origin);
+        store.remove(origin);
         PendingLogin login = pending.remove(origin);
         if (login != null && login.isOpen()) {
             login.fail("cancelled");

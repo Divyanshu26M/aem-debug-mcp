@@ -34,6 +34,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -72,7 +73,8 @@ public final class BrowserEngine implements AuthManager.LoginLauncher, AutoClose
         final AemInstance instance;
         final BrowserContext context;
         final Page page;
-        final AuthManager.PendingLogin pending;
+        /** The login waiting for this window; re-pointed when a new login reuses the still-open window. */
+        AuthManager.PendingLogin pending;
         final long startedAt = System.currentTimeMillis();
         boolean done;
 
@@ -116,12 +118,17 @@ public final class BrowserEngine implements AuthManager.LoginLauncher, AutoClose
                 .setDeviceScaleFactor(1)
                 .setIgnoreHTTPSErrors(true);
         try (BrowserContext context = browser.newContext(options)) {
-            List<Cookie> cookies = new ArrayList<>();
-            for (Map.Entry<String, String> cookie : request.cookies().entrySet()) {
-                cookies.add(new Cookie(cookie.getKey(), cookie.getValue()).setUrl(request.origin()));
-            }
-            if (!cookies.isEmpty()) {
-                context.addCookies(cookies);
+            SiteSession site = request.siteSession();
+            if (site != null) {
+                applySiteSession(context, site);
+            } else {
+                List<Cookie> cookies = new ArrayList<>();
+                for (Map.Entry<String, String> cookie : request.cookies().entrySet()) {
+                    cookies.add(new Cookie(cookie.getKey(), cookie.getValue()).setUrl(request.origin()));
+                }
+                if (!cookies.isEmpty()) {
+                    context.addCookies(cookies);
+                }
             }
             if (request.blockExternal()) {
                 context.route(url -> !isLocalUrl(url), route -> route.abort());
@@ -263,6 +270,256 @@ public final class BrowserEngine implements AuthManager.LoginLauncher, AutoClose
         }
     }
 
+    private static void applySiteSession(BrowserContext context, SiteSession site) {
+        List<Cookie> cookies = site.cookies();
+        if (!cookies.isEmpty()) {
+            try {
+                context.addCookies(cookies);
+            } catch (PlaywrightException e) {
+                for (Cookie cookie : cookies) {
+                    try {
+                        context.addCookies(List.of(cookie));
+                    } catch (PlaywrightException single) {
+                        LOG.debug("site session cookie {} not accepted: {}", cookie.name, firstLine(single.getMessage()));
+                    }
+                }
+            }
+        }
+        String script = site.initScript();
+        if (script != null) {
+            context.addInitScript(script);
+        }
+    }
+
+    // ------------------------------------------------------------------ site login (customer / end-user session)
+
+    private static final String STORAGE_SCRIPT = "() => { const read = (s) => { const o = {}; try {"
+            + " for (let i = 0; i < s.length; i++) { const k = s.key(i); o[k] = s.getItem(k); } } catch (e) {}"
+            + " return o; }; let local = {}, session = {};"
+            + " try { local = read(window.localStorage); } catch (e) {}"
+            + " try { session = read(window.sessionStorage); } catch (e) {}"
+            + " return { local, session }; }";
+    private static final long SITE_WINDOW_TIMEOUT_MS = 30 * 60 * 1000L;
+
+    /** The visible window in which the user signs in to a local site; accessed only on the browser thread. */
+    private static final class SiteLoginWindow {
+        final BrowserContext context;
+        final String startUrl;
+        final long startedAt = System.currentTimeMillis();
+        final Map<String, Map<String, String>> local = new LinkedHashMap<>();
+        final Map<String, Map<String, String>> session = new LinkedHashMap<>();
+        List<Cookie> cookies = new ArrayList<>();
+        boolean done;
+
+        SiteLoginWindow(BrowserContext context, String startUrl) {
+            this.context = context;
+            this.startUrl = startUrl;
+        }
+    }
+
+    /** The visible site login window, written only on the browser thread (volatile for a quick check elsewhere). */
+    private volatile SiteLoginWindow siteWindow;
+    private volatile SiteSession siteSession;
+
+    /**
+     * Opens a visible window on a local site page. The user signs in there (any login flow, including external
+     * identity providers); cookies of local hosts and storage of local origins are captured while the window is open
+     * and when the user closes it. Returns immediately: true when a new window was opened, false when the window that
+     * is already open was brought to the front instead (an open window is never replaced).
+     */
+    public boolean openSiteLogin(String url) {
+        HostPolicy.requireLocal(URI.create(url));
+        return onBrowserThread(() -> doOpenSiteLogin(url), Duration.ofSeconds(90));
+    }
+
+    /**
+     * The captured site session, or null. While the site login window is open it is refreshed first, waiting at most a
+     * few seconds: when the browser thread is busy (a render), the last poll's capture (seconds old) is returned.
+     */
+    public SiteSession siteSession() {
+        if (siteWindow == null) {
+            return siteSession;
+        }
+        try {
+            return onBrowserThread(() -> {
+                SiteLoginWindow window = siteWindow;
+                if (window != null && !window.done) {
+                    captureSite(window);
+                }
+                return siteSession;
+            }, Duration.ofSeconds(5));
+        } catch (ToolException e) {
+            return siteSession;
+        }
+    }
+
+    /** The last captured site session without touching the browser, or null. */
+    public SiteSession siteSessionSnapshot() {
+        return siteSession;
+    }
+
+    /** Closes the site login window if open and forgets the captured session. */
+    public boolean forgetSiteSession() {
+        return onBrowserThread(() -> {
+            boolean had = siteSession != null || siteWindow != null;
+            SiteLoginWindow window = siteWindow;
+            if (window != null) {
+                window.done = true;
+                siteWindow = null;
+                closeQuietly(window.context);
+            }
+            siteSession = null;
+            closeHeadedIfIdle();
+            return had;
+        }, Duration.ofSeconds(30));
+    }
+
+    private boolean doOpenSiteLogin(String url) {
+        SiteLoginWindow previous = siteWindow;
+        if (previous != null && !previous.done) {
+            for (Page page : previous.context.pages()) {
+                if (!page.isClosed()) {
+                    try {
+                        page.bringToFront();
+                    } catch (PlaywrightException e) {
+                        LOG.debug("bringToFront failed: {}", firstLine(e.getMessage()));
+                    }
+                    return false;
+                }
+            }
+            finishSiteLogin(previous, null);
+        }
+        BrowserContext context = windowBrowser().newContext(new Browser.NewContextOptions()
+                .setViewportSize(null)
+                .setIgnoreHTTPSErrors(true));
+        SiteLoginWindow window = new SiteLoginWindow(context, url);
+        siteWindow = window;
+        Page page = context.newPage();
+        try {
+            page.navigate(url, new Page.NavigateOptions().setTimeout(30_000));
+            page.bringToFront();
+        } catch (PlaywrightException e) {
+            LOG.info("Site login page did not load completely: {}", firstLine(e.getMessage()));
+        }
+        try {
+            // Publish this window's state right away so nobody mistakes the previous capture for the new login.
+            captureSite(window);
+        } catch (PlaywrightException e) {
+            siteSession = new SiteSession(List.of(), Map.of(), Map.of(), url, System.currentTimeMillis(), true);
+        }
+        LOG.info("Opened site login window");
+        scheduleSitePoll(window);
+        return true;
+    }
+
+    private void scheduleSitePoll(SiteLoginWindow window) {
+        executor.schedule(() -> pollSite(window), 1500, TimeUnit.MILLISECONDS);
+    }
+
+    private void pollSite(SiteLoginWindow window) {
+        if (window.done) {
+            return;
+        }
+        try {
+            captureSite(window);
+            boolean open = false;
+            for (Page page : window.context.pages()) {
+                open |= !page.isClosed();
+            }
+            if (!open) {
+                finishSiteLogin(window, null);
+            } else if (System.currentTimeMillis() - window.startedAt > SITE_WINDOW_TIMEOUT_MS) {
+                finishSiteLogin(window, "the site login window timed out");
+            } else {
+                scheduleSitePoll(window);
+            }
+        } catch (PlaywrightException e) {
+            finishSiteLogin(window, "site login window error: " + firstLine(e.getMessage()));
+        }
+    }
+
+    /** Reads cookies and the storage of open local pages into the window state and publishes a snapshot. */
+    private void captureSite(SiteLoginWindow window) {
+        window.cookies = new ArrayList<>(window.context.cookies());
+        for (Page page : window.context.pages()) {
+            if (page.isClosed()) {
+                continue;
+            }
+            String origin = originOf(page.url());
+            if (origin == null || !SiteSession.isLocalOrigin(origin)) {
+                continue;
+            }
+            try {
+                Map<String, Object> storage = Json.asMap(page.evaluate(STORAGE_SCRIPT));
+                window.local.put(origin, stringMap(storage.get("local")));
+                window.session.put(origin, stringMap(storage.get("session")));
+            } catch (PlaywrightException e) {
+                LOG.debug("storage of {} not readable now: {}", origin, firstLine(e.getMessage()));
+            }
+        }
+        siteSession = new SiteSession(window.cookies, window.local, window.session, window.startUrl,
+                System.currentTimeMillis(), !window.done);
+    }
+
+    private void finishSiteLogin(SiteLoginWindow window, String reason) {
+        if (window.done) {
+            return;
+        }
+        try {
+            captureSite(window);
+        } catch (PlaywrightException e) {
+            LOG.debug("final site capture failed: {}", firstLine(e.getMessage()));
+        }
+        window.done = true;
+        SiteSession captured = new SiteSession(window.cookies, window.local, window.session, window.startUrl,
+                System.currentTimeMillis(), false);
+        siteSession = captured;
+        if (siteWindow == window) {
+            siteWindow = null;
+        }
+        closeQuietly(window.context);
+        closeHeadedIfIdle();
+        LOG.info("Site login window closed ({}); captured {} local cookies", reason == null ? "by the user" : reason,
+                captured.cookies().size());
+    }
+
+    private static Map<String, String> stringMap(Object value) {
+        Map<String, String> map = new LinkedHashMap<>();
+        for (Map.Entry<String, Object> entry : Json.asMap(value).entrySet()) {
+            if (entry.getValue() != null) {
+                map.put(entry.getKey(), String.valueOf(entry.getValue()));
+            }
+        }
+        return map;
+    }
+
+    private static String originOf(String url) {
+        try {
+            URI uri = URI.create(url);
+            if (uri.getScheme() == null || uri.getHost() == null) {
+                return null;
+            }
+            return uri.getScheme().toLowerCase(Locale.ROOT) + "://" + uri.getRawAuthority();
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+
+    private void closeHeadedIfIdle() {
+        if (logins.isEmpty() && siteWindow == null && headed != null) {
+            closeQuietly(headed);
+            headed = null;
+        }
+    }
+
+    private static void closeQuietly(BrowserContext context) {
+        try {
+            context.close();
+        } catch (PlaywrightException e) {
+            LOG.debug("closing browser context failed: {}", firstLine(e.getMessage()));
+        }
+    }
+
     // ------------------------------------------------------------------ interactive login
 
     @Override
@@ -288,12 +545,24 @@ public final class BrowserEngine implements AuthManager.LoginLauncher, AutoClose
     private void doOpenLogin(AemInstance instance, String loginUrl, AuthManager.PendingLogin pending) {
         LoginSession existing = logins.get(instance.origin());
         if (existing != null && !existing.done) {
-            finishLogin(existing, null, "replaced by a new login window");
+            if (!existing.page.isClosed()) {
+                // Never replace a window the user may be typing in: the new login waits for the same window.
+                AuthManager.PendingLogin previous = existing.pending;
+                existing.pending = pending;
+                if (previous != pending && previous.isOpen()) {
+                    previous.fail("continued by a newer login request in the same window");
+                }
+                try {
+                    existing.page.bringToFront();
+                } catch (PlaywrightException e) {
+                    LOG.debug("bringToFront failed: {}", firstLine(e.getMessage()));
+                }
+                LOG.info("Reusing the open login window for {}", instance.name());
+                return;
+            }
+            finishLogin(existing, null, "the login window was closed before signing in");
         }
-        if (headed == null || !headed.isConnected()) {
-            headed = launch(false);
-        }
-        BrowserContext context = headed.newContext(new Browser.NewContextOptions()
+        BrowserContext context = windowBrowser().newContext(new Browser.NewContextOptions()
                 .setViewportSize(null)
                 .setIgnoreHTTPSErrors(true));
         Page page = context.newPage();
@@ -356,14 +625,7 @@ public final class BrowserEngine implements AuthManager.LoginLauncher, AutoClose
         } catch (PlaywrightException e) {
             LOG.debug("closing login context failed: {}", e.getMessage());
         }
-        if (logins.isEmpty() && headed != null) {
-            try {
-                headed.close();
-            } catch (PlaywrightException e) {
-                LOG.debug("closing headed browser failed: {}", e.getMessage());
-            }
-            headed = null;
-        }
+        closeHeadedIfIdle();
     }
 
     // ------------------------------------------------------------------ lifecycle
@@ -373,6 +635,14 @@ public final class BrowserEngine implements AuthManager.LoginLauncher, AutoClose
             headless = launch(true);
         }
         return headless;
+    }
+
+    /** The browser for login windows: visible, except in automated tests (aemdebug.headlessLoginWindows=true). */
+    private Browser windowBrowser() {
+        if (headed == null || !headed.isConnected()) {
+            headed = launch(Boolean.getBoolean("aemdebug.headlessLoginWindows"));
+        }
+        return headed;
     }
 
     private Playwright playwright() {
@@ -466,6 +736,9 @@ public final class BrowserEngine implements AuthManager.LoginLauncher, AutoClose
                 for (LoginSession session : new ArrayList<>(logins.values())) {
                     finishLogin(session, null, "server shutting down");
                 }
+                if (siteWindow != null) {
+                    finishSiteLogin(siteWindow, "server shutting down");
+                }
                 closeQuietly(headless);
                 closeQuietly(headed);
                 headless = null;
@@ -491,6 +764,9 @@ public final class BrowserEngine implements AuthManager.LoginLauncher, AutoClose
             int count = 0;
             for (LoginSession session : new ArrayList<>(logins.values())) {
                 finishLogin(session, null, "closed by debug_cleanup");
+            }
+            if (siteWindow != null) {
+                finishSiteLogin(siteWindow, "closed by debug_cleanup");
             }
             if (headless != null) {
                 closeQuietly(headless);

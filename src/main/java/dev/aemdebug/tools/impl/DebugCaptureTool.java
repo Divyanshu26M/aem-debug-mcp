@@ -3,6 +3,7 @@ package dev.aemdebug.tools.impl;
 import dev.aemdebug.aem.AemInstance;
 import dev.aemdebug.browser.RenderReport;
 import dev.aemdebug.correlate.RequestCorrelator;
+import dev.aemdebug.jdi.JdiEngine;
 import dev.aemdebug.server.Services;
 import dev.aemdebug.tools.AbstractTool;
 import dev.aemdebug.tools.ToolContext;
@@ -142,8 +143,9 @@ public final class DebugCaptureTool extends AbstractTool {
         for (String note : active.jvmNotes) {
             out.append("- JVM: ").append(note).append('\n');
         }
-        if (s.jdi != null && active.jvmActive) {
-            out.append("- snapshots so far: ").append(s.jdi.snapshots().since(active.startedAt).size()).append('\n');
+        JdiEngine engine = active.engine();
+        if (engine != null && active.jvmActive) {
+            out.append("- snapshots so far: ").append(engine.snapshots().since(active.startedAt).size()).append('\n');
         }
         return ToolResult.of(out.toString());
     }

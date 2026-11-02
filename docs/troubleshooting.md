@@ -42,21 +42,55 @@ It reached `maxHits` or fired too often per second (flood protection keeps AEM r
 It detaches after `AEM_DEBUG_IDLE_DETACH_MINUTES` (default 15, 0 = never) of inactivity so IntelliJ can
 reconnect. Long `debug_capture` sessions can be cut short by this.
 
+**"No JDWP port is configured for publish" or publish snapshots never appear**
+Publish runs in its own JVM. Restart publish with its own JDWP port, for example
+`-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=8768` (not author's 8767), and set
+`AEM_PUBLISH_JDWP_PORT` (the plugin uses 8768) or call `jvm_connection action=attach instance=publish port=8768`.
+Breakpoints, watches and snapshots are per instance: pass `instance=publish` to the `jvm_*` tools.
+
 ## Login and access
 
 **A browser window opened on the AEM login page**
-That is how the server gets access: sign in there (local admin or SSO) and retry the tool. The session cookie
-is kept in memory only. To skip the window on a local SDK you can set `AEM_USER` and `AEM_PASSWORD` in the MCP
-server's environment (never in the chat).
+That is how the server gets access: sign in there (local admin or SSO) and retry the tool. The login token is
+remembered for later chats in an owner-only file (`AEM_DEBUG_REMEMBER_LOGINS=false` keeps it in memory only). To
+skip the window on a local SDK you can set `AEM_USER` and `AEM_PASSWORD` in the MCP server's environment (never
+in the chat).
 
 **"login pending" keeps coming back**
 The login window was closed or timed out. Call `aem_auth action=login` and complete the login in the window.
+Several tools waiting at the same time share one window per instance.
+
+**I have to sign in again in a new chat**
+Remembered logins expire after 7 days and are dropped when AEM rejects the token (for example after AEM was
+reinstalled). Check `aem_auth action=status`: it says where logins are remembered, or that they are kept in memory
+only.
 
 **HTTP 401/403 in page renders**
-The browser session has no access to the page. Check `aem_auth action=status`; on publish, the page may need to
-be activated or the path may be blocked.
+On author, check `aem_auth action=status`. On publish or a dev server, the page or its API calls usually need a
+signed-in visitor: the report suggests `aem_auth action=site-login url=<page>`. Sign in in that window, close it,
+and render again; publish and dev-server renders use the site session automatically. Use `session=aem` when the
+calls need the AEM login of publish instead. On publish the page may also need to be activated, or the path may
+be blocked.
+
+**The site session does not work in renders**
+Close the site login window only when the site shows you signed in; `aem_auth action=status` lists the captured
+cookie names and storage keys. Sessions that live only in the page's memory (not in cookies or storage) cannot be
+carried over. Sign in again with `aem_auth action=site-login` when the site session has expired.
 
 ## Rendering
+
+**"... is not one of the configured AEM instances"**
+The URL belongs to a front-end dev server. Pass `instance=publish` or `instance=author` once (the AEM it proxies
+to; see its proxy configuration); it is remembered. A local URL is never rewritten to another origin.
+
+**A dev-server page shows no components and no RPT for the document**
+The dev server answered the page URL with its own app shell, so AEM did not render the document. The report's
+"Dev server" section lists the requests that did reach AEM. If the dev server proxies the page itself, pass
+`components=true`.
+
+**No server-side data for a dev server's API calls**
+The calls are matched by method and path. A proxy that rewrites paths (for example `/api` to `/services/api`)
+prevents the match; so does a dev server that answers them itself.
 
 **No browser found / Playwright errors**
 The server uses an installed Microsoft Edge or Google Chrome (headless) and does not download browsers. Install
@@ -72,8 +106,8 @@ consent) adds debug comments that improve mapping on author.
 
 **error.log is "not readable"**
 The server finds the log through sling.home. If AEM runs in a container or under another user, set
-`AEM_LOG_DIR` to the `crx-quickstart/logs` folder. Without file access the server falls back to the Sling log
-tailer in the Felix console (needs admin login).
+`AEM_LOG_DIR` (author) or `AEM_PUBLISH_LOG_DIR` (publish) to the `crx-quickstart/logs` folder. Without file
+access the server falls back to the Sling log tailer in the Felix console (needs admin login).
 
 **No RPT for the document request**
 The Recent Requests console keeps only the last 20 requests by default, and a page with many assets pushes the

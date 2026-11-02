@@ -42,9 +42,14 @@ public final class AemClient {
         if (instance.isAuthor() && options.sendSession() && !auth.hasSession(instance)) {
             auth.ensureSession(context, instance);
         }
+        // AEM clears a rejected token with Set-Cookie, so remember which token this request carried.
+        String sentToken = options.sendSession() ? auth.token(instance) : null;
         AemResponse response = http.get(instance, pathAndQuery, options);
         if (options.sendSession() && (response.isLoginRequired()
                 || (response.status() == 403 && !auth.hasSession(instance)))) {
+            if (response.isLoginRequired() && sentToken != null) {
+                auth.sessionRejected(instance, sentToken);
+            }
             auth.ensureSession(context, instance);
             response = http.get(instance, pathAndQuery, options);
             if (response.isLoginRequired()) {

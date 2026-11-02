@@ -1,5 +1,6 @@
 package dev.aemdebug.tools.impl;
 
+import dev.aemdebug.aem.AemInstance;
 import dev.aemdebug.jdi.JdiEngine;
 import dev.aemdebug.project.ClassFileInfo;
 import dev.aemdebug.project.ProjectIndex;
@@ -36,7 +37,8 @@ public final class JvmClassesTool extends AbstractTool {
                         + "free).",
                 Schema.object()
                         .requiredStr("class", "Fully qualified class name (simple names work but are slower), e.g. "
-                                + "com.mysite.core.models.HeroModel"));
+                                + "com.mysite.core.models.HeroModel")
+                        .enumStr("instance", "JVM of author (default) or publish", "author", "publish"));
         this.s = services;
     }
 
@@ -48,8 +50,9 @@ public final class JvmClassesTool extends AbstractTool {
     @Override
     public ToolResult call(ToolContext context, Args args) {
         String className = args.requireStr("class").trim();
-        JdiEngine engine = JvmTools.engine(s);
-        String attached = JvmTools.ensureAttached(s, true);
+        AemInstance instance = JvmTools.instance(s, args);
+        JdiEngine engine = JvmTools.engine(s, instance);
+        String attached = JvmTools.ensureAttached(s, instance, true);
         ProjectIndex index = JvmTools.projectIndex(s, context);
         if (!className.contains(".") && index != null) {
             ProjectModel.JavaClass local = index.classByName(className);

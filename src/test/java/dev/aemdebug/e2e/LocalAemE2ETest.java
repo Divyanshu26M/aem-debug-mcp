@@ -92,7 +92,7 @@ class LocalAemE2ETest {
     @Test
     @Order(2)
     void snapshotOnARealSlingRequestCarriesTheRequestThreadName() throws Exception {
-        JdiEngine engine = services.jdi;
+        JdiEngine engine = services.jdi("author");
         assumeTrue(engine != null, "jdk.jdi not available");
         JdwpPortProbe.Result probe = JdwpPortProbe.probe(config.jdwpHost(), config.jdwpPort(), 1500);
         FINDINGS.put("JDWP probe", String.valueOf(probe));

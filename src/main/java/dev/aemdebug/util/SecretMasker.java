@@ -29,6 +29,9 @@ public final class SecretMasker {
     private static final Pattern AUTH_HEADER = Pattern.compile(
             "(?i)(authorization\\s*[:=]\\s*)(basic|bearer)\\s+[A-Za-z0-9+/=._~-]+");
 
+    /** user:password@ in a URL. */
+    private static final Pattern URL_CREDENTIALS = Pattern.compile("(?i)\\b(https?://)[^/\\s:@\"'<>]+:[^/\\s@\"'<>]*@");
+
     private SecretMasker() {
     }
 
@@ -68,7 +71,8 @@ public final class SecretMasker {
         if (value == null) {
             return null;
         }
-        return ENCRYPTED_VALUE.matcher(value).replaceAll("{" + MASK + "}");
+        String masked = URL_CREDENTIALS.matcher(value).replaceAll("$1" + MASK + "@");
+        return ENCRYPTED_VALUE.matcher(masked).replaceAll("{" + MASK + "}");
     }
 
     /** Masks key=value style secrets, auth headers and encrypted values inside free text (logs, HTML, RPT). */

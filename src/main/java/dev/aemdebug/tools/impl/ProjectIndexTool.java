@@ -216,7 +216,7 @@ public final class ProjectIndexTool extends AbstractTool {
         if (author == null) {
             return "";
         }
-        if (!s.auth.hasSession(author)) {
+        if (!authenticated(author)) {
             return "- deployment on " + author.name() + ": not checked (log in with aem_auth action=login to see which "
                     + "of these projects is installed)\n";
         }
@@ -225,6 +225,18 @@ public final class ProjectIndexTool extends AbstractTool {
                     "- on " + author.name() + ": ");
         } catch (RuntimeException e) {
             return "- deployment on " + author.name() + ": unavailable (" + Text.oneLine(e.getMessage(), 160) + ")\n";
+        }
+    }
+
+    /** True with a verified session, including a login remembered from an earlier chat; never opens a window. */
+    private boolean authenticated(AemInstance instance) {
+        if (s.auth.hasSession(instance)) {
+            return true;
+        }
+        try {
+            return s.auth.status(instance, true).authenticated();
+        } catch (RuntimeException e) {
+            return false;
         }
     }
 

@@ -55,4 +55,15 @@ class SecretMaskerTest {
                 .doesNotContain("x1");
         assertThat(masked).contains("j_username=admin").contains("other=1");
     }
+
+    @Test
+    void masksCredentialsInUrls() {
+        assertThat(SecretMasker.maskValue("http://admin:s3cret@localhost:4502/content/site.html"))
+                .isEqualTo("http://****@localhost:4502/content/site.html");
+        assertThat(SecretMasker.maskText("open https://user:p%40ss@127.0.0.1:3000/ now"))
+                .isEqualTo("open https://****@127.0.0.1:3000/ now");
+        assertThat(String.valueOf(SecretMasker.maskTree(Map.of("path", "http://a:b@localhost:3000/x"))))
+                .doesNotContain("a:b");
+        assertThat(SecretMasker.maskValue("http://localhost:4502/content/a@b.html")).contains("a@b.html");
+    }
 }

@@ -293,8 +293,11 @@ final class DebugReport {
 
     /** Hints that combine the browser, component and server-side views of one page render. */
     static List<String> pageHints(DebugRun run, ComponentMapper.Result mapping, RequestCorrelator.Result correlation,
-                                  NetworkEntry document) {
+                                  NetworkEntry document, String accessHint) {
         Set<String> hints = new LinkedHashSet<>();
+        if (accessHint != null) {
+            hints.add(accessHint);
+        }
         for (Snapshot snapshot : run.snapshots) {
             if (!snapshot.isException()) {
                 continue;
@@ -330,19 +333,23 @@ final class DebugReport {
         if (document != null) {
             int status = document.status();
             if (status >= 500 && !run.jvmActive) {
-                hints.add("HTTP " + status + " without JVM data: free the JDWP port (detach IntelliJ) and run debug_page "
-                        + "again to capture the exception at the throw site.");
+                String problem = JvmTools.endpointProblem(run.s, run.instance);
+                hints.add("HTTP " + status + " without JVM data: " + (problem != null ? problem
+                        : "free the JDWP port (detach IntelliJ) and run debug_page again to capture the exception at "
+                        + "the throw site."));
             }
             if (status == 404) {
                 hints.add("HTTP 404: check the path (aem_get_resource) and that the page exists on "
                         + run.instance.name() + ".");
             }
-            if (status == 401 || status == 403) {
+            if ((status == 401 || status == 403) && accessHint == null) {
                 hints.add("HTTP " + status + ": the browser session lacks access (aem_auth action=status).");
             }
         }
         if (!run.snapshots.isEmpty()) {
-            hints.add("Snapshot ids (sN) above: jvm_snapshots action=get id=sN shows every captured frame and local.");
+            hints.add("Snapshot ids (sN) above: jvm_snapshots action=get id=sN"
+                    + (run.instance.isAuthor() ? "" : " instance=" + run.instance.name())
+                    + " shows every captured frame and local.");
         }
         return new ArrayList<>(hints);
     }

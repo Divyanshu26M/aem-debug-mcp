@@ -114,9 +114,20 @@ public final class JdiEngine implements CleanupCoordinator.Participant {
     private volatile ExecutorService invoker;
     private volatile Field detailMessageField;
     private volatile Field causeField;
+    private final String label;
 
     public JdiEngine(int idleDetachMinutes) {
+        this(idleDetachMinutes, null);
+    }
+
+    /** An engine for one AEM instance; the label (e.g. "publish") names it in cleanup reports. */
+    public JdiEngine(int idleDetachMinutes, String label) {
         this.idleMillis = idleDetachMinutes * 60_000L;
+        this.label = label;
+    }
+
+    public String label() {
+        return label;
     }
 
     // ------------------------------------------------------------------ connection
@@ -1374,7 +1385,7 @@ public final class JdiEngine implements CleanupCoordinator.Participant {
 
     @Override
     public String name() {
-        return "JVM debugging";
+        return label == null ? "JVM debugging" : "JVM debugging (" + label + ")";
     }
 
     @Override

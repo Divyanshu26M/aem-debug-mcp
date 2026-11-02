@@ -13,6 +13,7 @@
         "AEM_PUBLISH_URL": "http://localhost:4503",
         "AEM_JDWP_HOST": "127.0.0.1",
         "AEM_JDWP_PORT": "8767",
+        "AEM_PUBLISH_JDWP_PORT": "8768",
         "AEM_DEBUG_ARTIFACTS_DIR": "${PLUGIN_DATA}"
       }
     }

@@ -1,6 +1,6 @@
 ---
 name: aem-local-debugging
-description: Debug a local AEM instance (AEM as a Cloud Service SDK or 6.5 on localhost) end to end with the aem-debug MCP server - render pages, map the rendered output to components and source files, read content and OSGi config, capture JVM snapshots and exceptions over JDWP, and correlate everything to the HTTP request. Use when the user reports an empty/broken/wrong component, a page error (500/404), missing styles or scripts (clientlib 404), code changes that do not show up, or policy/style-system problems on localhost:4502/4503.
+description: Debug a local AEM instance (AEM as a Cloud Service SDK or 6.5 on localhost) end to end with the aem-debug MCP server - render pages, map the rendered output to components and source files, read content and OSGi config, capture JVM snapshots and exceptions over JDWP, and correlate everything to the HTTP request. Use when the user reports an empty/broken/wrong component, a page error (500/404), missing styles or scripts (clientlib 404), code changes that do not show up, or policy/style-system problems on localhost:4502/4503, or a problem on a page of a local front-end dev server (e.g. localhost:3000) that proxies to AEM.
 ---
 
 # Local AEM debugging with aem-debug-mcp
@@ -17,13 +17,15 @@ the evidence and the file and line to fix, and you then make the fix here.
 
 - Only local instances are reachable (localhost, 127.0.0.1, ::1). Everything is read-only except
   `aem_debug_toggle`, which changes debug settings only and is reverted automatically.
-- **Login**: when AEM needs authentication a browser window opens on the AEM login page. Tell the user to sign
-  in there (local admin or SSO) and retry the tool. Never ask for passwords in chat and never put credentials
-  in tool arguments.
+- **Login**: when AEM needs authentication a browser window opens on the AEM login page (author or publish).
+  Tell the user to sign in there (local admin or SSO) and retry the tool; the login is remembered for later
+  chats. For a site's own visitor/customer login use `aem_auth action=site-login url=<page>` (see below). Never
+  ask for passwords in chat and never put credentials in tool arguments.
 - **JDWP is exclusive**: AEM accepts one debugger. Before `jvm_connection` / `jvm_breakpoint` /
   `jvm_exception_watch` / `debug_page` with JVM capture, make sure IntelliJ (or another debugger) is detached -
   `aem_status` tells you if the port is busy. When done, `jvm_connection action=detach` (or `debug_cleanup`)
-  hands the port back. The server auto-detaches after inactivity.
+  hands the port back. The server auto-detaches after inactivity. Author and publish are separate JVMs: the
+  `jvm_*` tools take `instance=publish`, and publish needs its own JDWP port.
 - Breakpoints never pause AEM: they take a snapshot (stack, locals, `this`) and resume immediately.
 - **Never call `aem_debug_toggle` with `confirm=true` unless the user explicitly approved that exact change**
   in this conversation. Prefer `action=plan` first and show the user what would change.
@@ -58,6 +60,26 @@ the evidence and the file and line to fix, and you then make the fix here.
 
 Use `debug_capture action=start` when the user wants to reproduce manually in their own browser or in the
 AEM author UI, then `debug_capture action=stop` for the per-request report.
+
+## Publish and front-end dev servers
+
+- **Publish**: pass `instance=publish` (or a `http://localhost:4503/...` URL). Renders show what a visitor sees:
+  anonymous, or with the site session once the user has signed in with `aem_auth action=site-login`.
+- **Dev server** (e.g. a React/webpack/Vite app on `localhost:3000` that proxies API or asset paths to AEM):
+  pass the dev-server URL as `path`. The first time, add `instance=publish` or `instance=author` - the AEM the
+  dev server proxies to. Find it in the dev server's proxy configuration (`setupProxy.js`, `devServer.proxy`,
+  `server.proxy`, the `"proxy"` field of `package.json`) or ask the user. It is remembered.
+- On a dev-server page, `debug_page` reports the browser side (screenshot, failed requests, console errors) and,
+  in its "Dev server" section, which requests reached AEM, with their error.log lines, RPT and JVM events
+  matched by method and path. The page itself is usually the dev server's app shell, so there is no component
+  map and no document RPT; pass `components=true` only if the dev server proxies the page itself to AEM.
+- **401/403 on the page or its API calls** (the report's hint): call `aem_auth action=site-login url=<page URL>`
+  and ask the user to sign in in the window that opens (any login flow, including an external identity
+  provider) and close it when the site shows them signed in. Then re-run: publish and dev-server renders use the
+  site session automatically (`session=none` renders anonymously). It stays in memory only.
+- **JVM capture on publish** needs publish started with its own JDWP port (e.g. `address=8768`). If the report
+  says JVM capture was skipped for publish, tell the user the exact start option; never restart AEM yourself.
+  The report still has error.log and RPT without it.
 
 ## Recipes
 

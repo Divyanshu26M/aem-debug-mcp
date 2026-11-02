@@ -57,17 +57,24 @@ public final class FakeAem implements AutoCloseable {
         public final String query;
         public final String cookieHeader;
         public final Map<String, String> form;
+        private final String validToken;
 
-        Request(String method, String path, String query, String cookieHeader, Map<String, String> form) {
+        Request(String method, String path, String query, String cookieHeader, Map<String, String> form,
+                String validToken) {
             this.method = method;
             this.path = path;
             this.query = query;
             this.cookieHeader = cookieHeader;
             this.form = form;
+            this.validToken = validToken;
         }
 
         public boolean authenticated() {
-            return cookieHeader != null && cookieHeader.contains("login-token=" + TOKEN);
+            return cookieHeader != null && cookieHeader.contains("login-token=" + validToken);
+        }
+
+        boolean sentToken() {
+            return cookieHeader != null && cookieHeader.contains("login-token=");
         }
     }
 
@@ -81,6 +88,8 @@ public final class FakeAem implements AutoCloseable {
     private final Set<String> publicPaths = ConcurrentHashMap.newKeySet();
     private final List<String> log = new CopyOnWriteArrayList<>();
     private volatile boolean requireAuth = true;
+    private volatile String validToken = TOKEN;
+    private volatile boolean clearRejectedTokens;
 
     private FakeAem() throws IOException {
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
@@ -93,7 +102,7 @@ public final class FakeAem implements AutoCloseable {
         route(LOGIN_PAGE + "/j_security_check", r -> {
             if ("admin".equals(r.form.get("j_username")) && "admin".equals(r.form.get("j_password"))) {
                 return new Reply(200, "text/plain", "OK")
-                        .header("Set-Cookie", "login-token=" + TOKEN + "; Path=/; HttpOnly");
+                        .header("Set-Cookie", "login-token=" + validToken + "; Path=/; HttpOnly");
             }
             return new Reply(403, "text/plain", "j_reason=invalid_login");
         });
@@ -142,6 +151,22 @@ public final class FakeAem implements AutoCloseable {
         return this;
     }
 
+    /** The token AEM accepts from now on (and hands out on login), e.g. to let the previous one expire. */
+    public FakeAem validToken(String token) {
+        this.validToken = token;
+        return this;
+    }
+
+    public String validToken() {
+        return validToken;
+    }
+
+    /** Like AEM: a request with a token that is not accepted gets "Set-Cookie: login-token=; Max-Age=0". */
+    public FakeAem clearRejectedTokens(boolean value) {
+        this.clearRejectedTokens = value;
+        return this;
+    }
+
     /** "METHOD /path?query" of every request received. */
     public List<String> requests() {
         return log;
@@ -167,7 +192,7 @@ public final class FakeAem implements AutoCloseable {
                 }
             }
             log.add(method + " " + path + (query == null ? "" : "?" + query));
-            Request request = new Request(method, path, query, cookie, form);
+            Request request = new Request(method, path, query, cookie, form, validToken);
             Reply reply;
             if (requireAuth && !publicPaths.contains(path) && !request.authenticated()) {
                 reply = new Reply(302, "text/html", "").header("Location", LOGIN_PAGE + "?resource="
@@ -176,6 +201,9 @@ public final class FakeAem implements AutoCloseable {
                 Handler handler = routes.get(path);
                 reply = handler == null ? new Reply(404, "text/html", "<html>Not found " + path + "</html>")
                         : handler.handle(request);
+            }
+            if (clearRejectedTokens && request.sentToken() && !request.authenticated()) {
+                reply.header("Set-Cookie", "login-token=; Path=/; Max-Age=0");
             }
             exchange.getResponseHeaders().add("Content-Type", reply.contentType);
             for (Map.Entry<String, String> header : reply.headers.entrySet()) {
