@@ -2,7 +2,7 @@
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "aem-debug-mcp",
   "version": "0.1.0",
-  "description": "Debug local AEM end to end from Copilot: render pages, map them to components and source, read content and config, and capture JVM snapshots over JDWP - all correlated per HTTP request.",
+  "description": "Debug local AEM end to end from your AI assistant: render pages, map them to components and source, read content and config, and capture JVM snapshots over JDWP - all correlated per HTTP request.",
   "author": {
     "name": "dmayank"
   },

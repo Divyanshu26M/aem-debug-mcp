@@ -2,7 +2,7 @@
 
 aem-debug-mcp gives your AI assistant the four views of a local AEM bug: the rendered page, the AEM components and
 content behind it, the logs of that request, and the JVM state. All four are joined per HTTP request. It plugs into
-GitHub Copilot, Claude Code or another MCP client; it doesn't replace them.
+GitHub Copilot, Claude Code, Google Antigravity or another MCP client; it doesn't replace them.
 
 - [The problem](#the-problem)
 - [What aem-debug-mcp adds](#what-aem-debug-mcp-adds)
@@ -46,11 +46,13 @@ JVM. So `debug_page` matches exceptions, snapshots, log lines and Request Progre
 requests of one page load, by method, path and start time. It sets aside what other tabs, the author UI or
 background jobs did meanwhile ([details](tools.md#how-requests-are-correlated)).
 
-**A tool for your assistant, not another assistant.** aem-debug-mcp is an MCP server. It ships as a GitHub Copilot
-plugin, with a skill that teaches the debugging loop and a diagnose-only `aem-debugger` agent. It also runs as a
-standalone jar in any MCP client: [setup](setup.md) has snippets for VS Code and IntelliJ IDEA, and Claude Code adds
-it with `claude mcp add`. So far it has been used with GitHub Copilot; other clients speak the same protocol but
-haven't been tried yet.
+**A tool for your assistant, not another assistant.** aem-debug-mcp is an MCP server. It ships as a plugin for
+GitHub Copilot and Google Antigravity, with a skill that teaches the debugging loop and a diagnose-only
+`aem-debugger` agent. It also runs as a standalone jar in any MCP client: Claude Code adds it with
+`claude mcp add` and takes the skill and its own version of the agent, and [setup](setup.md) has snippets for
+VS Code and IntelliJ IDEA. So far it has been used mostly with GitHub Copilot. The `aem-debugger` agent has also
+diagnosed a WKND page in Antigravity. In Claude Code, the server connects and the agent gets exactly its tools,
+but it hasn't been run against a page yet. Other clients speak the same protocol but haven't been tried.
 
 It is built for a local AEM as a Cloud Service SDK or AEM 6.5 (verified so far on the SDK), author and publish, and
 for front-end dev servers that proxy to them. It finds each instance's JDWP port by itself
@@ -77,7 +79,7 @@ a stub AEM, not yet a real page.
   (`com.mysite.core.models.TeaserModel`) and HTL script, and a hint such as "JCR has 'jcr:title' but field 'title'
   injects 'title'" that points at the line to fix.
 - **Status:** rendering, component mapping and `component_inspect` were verified on a local AEM author. Linking
-  components to local source files isn't verified on a real page yet.
+  components to their local Sling Model and HTL files was verified with the WKND sample on a local AEM SDK.
 
 ### 2. A page returns 500
 
@@ -197,13 +199,19 @@ a stub AEM, not yet a real page.
 ### 11. Hand the investigation to the aem-debugger agent
 
 - **Symptom:** you want the cause and the fix, not every screenshot and log line in your main conversation.
-- **You ask** (in GitHub Copilot): "Use the aem-debugger agent to find out why the hero on /content/wknd/us/en is
-  empty." You can also select it with `/agent` or start `copilot --agent aem-debug-mcp:aem-debugger`.
-- **The agent:** a separate, diagnose-only agent runs the loop above. It can use every debug tool except
-  `aem_debug_toggle`, and read and search code. It can't edit files, run commands, deploy or change settings.
+- **You ask:** "Use the aem-debugger agent to find out why the hero on /content/wknd/us/en is empty." GitHub Copilot
+  also hands such tasks to it by itself, and you can select it with `/agent` or start
+  `copilot --agent aem-debug-mcp:aem-debugger`. In Claude Code, start `claude --agent aem-debugger`. In Antigravity,
+  start `agy --agent aem-debugger` or pick it in the app; its main agent doesn't hand tasks over by itself.
+- **The agent:** a separate, diagnose-only agent runs the loop above. It can use the debug tools, and read and
+  search code. It can't edit files, run commands or deploy. In Copilot and Claude Code its tool list leaves out
+  `aem_debug_toggle`. In Antigravity an agent can't pick single MCP tools, so there its instructions rule the toggle
+  out.
 - **You get:** a short report with the diagnosis, the evidence (component, snapshot ids, log lines, report id), the
-  fix (file and line), how to verify it, and what it couldn't check. Your main Copilot session then makes the fix.
-- **Status:** the agent's tool list is checked by an automated test and was checked in GitHub Copilot CLI.
+  fix (file and line), how to verify it, and what it couldn't check. Your main session then makes the fix.
+- **Status:** an automated test keeps the three versions of the agent in line with the server's tools. The agent
+  diagnosed a WKND page in GitHub Copilot CLI and in the Antigravity CLI. In Claude Code it gets exactly its tools,
+  but it hasn't been run against a page yet.
 
 ## How it compares
 
@@ -220,7 +228,7 @@ can add to it.
 |---|---|---|---|---|---|---|---|
 | See the rendered page: screenshot, console errors, failed requests | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
 | Map the rendered page to its AEM components | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
-| Go from a component to its Sling Model, HTL and local source files | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅† |
+| Go from a component to its Sling Model, HTL and local source files | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
 | Read content: resources, templates, policies | ❌ | ❌ | ❌ | ⚠️ pages, fragments, assets | ✅ | ❌ | ✅ read-only |
 | Check bundles, OSGi components and configurations | ❌ | ❌ | ❌ | ❌ | ⚠️ one server | ⚠️ bundles and components | ✅ |
 | Get the error.log lines of this page's own requests | ❌ | ❌ | ❌ | ❌ | ⚠️ log search | ⚠️ recent logs | ✅ |
@@ -259,12 +267,13 @@ screenshots and read console errors, also on a page you share with your sign-in.
 the same page. Adobe's AEM MCP server and Adobe's skills also work with Copilot, so all of them can be used side by
 side.
 
-**Claude Code.** Claude Code is an MCP client, so it can run aem-debug-mcp as a local stdio server added with
-[`claude mcp add`](https://code.claude.com/docs/en/mcp). That setup hasn't been tried yet, and the plugin's
-`aem-debugger` agent is specific to Copilot. [Claude in Chrome](https://code.claude.com/docs/en/chrome) gives Claude
-Code the browser side: console errors and DOM state in a visible Chrome or Edge window that shares your sign-in
-state. It needs the extension and a direct Anthropic plan. For a debugger, Claude Code can use IntelliJ IDEA's
-agentic debugging or mcp-jdwp-java.
+**Claude Code.** Claude Code is an MCP client, so it runs aem-debug-mcp as a local stdio server added with
+[`claude mcp add`](https://code.claude.com/docs/en/mcp). The skill and a Claude Code version of the `aem-debugger`
+agent are copied into `~/.claude` ([setup](setup.md#install-in-claude-code)). The server connects and the agent gets
+exactly its tools, but this setup hasn't been run against a page yet.
+[Claude in Chrome](https://code.claude.com/docs/en/chrome) gives Claude Code the browser side: console errors and
+DOM state in a visible Chrome or Edge window that shares your sign-in state. It needs the extension and a direct
+Anthropic plan. For a debugger, Claude Code can use IntelliJ IDEA's agentic debugging or mcp-jdwp-java.
 
 **Browser tools.** [VS Code's browser tools](https://code.visualstudio.com/docs/agents/run/browser-tools),
 [Claude in Chrome](https://code.claude.com/docs/en/chrome), [Playwright MCP](https://github.com/microsoft/playwright-mcp)
@@ -413,5 +422,7 @@ repository data. The limits below keep the debugging loop safe even when the age
   login. The server keeps only the session token: AEM logins in an owner-only file (or in memory only, with
   `AEM_DEBUG_REMEMBER_LOGINS=false`), site sessions in memory only. No tool accepts a password as an argument, URLs
   with `user:password@` are refused, and tool output masks secrets.
-- **A diagnose-only agent.** The `aem-debugger` agent in the Copilot plugin can use the debug tools and read code, but
-  it can't edit files, run commands, deploy or toggle debug settings. It returns the cause and the fix; you decide.
+- **A diagnose-only agent.** The `aem-debugger` agent can use the debug tools and read code, but it can't edit
+  files, run commands or deploy. In Copilot and Claude Code it can't toggle debug settings either. In Antigravity an
+  agent can't pick single MCP tools, so there its instructions rule the toggle out, and the toggle still needs your
+  confirmation. The agent returns the cause and the fix; you decide.

@@ -53,23 +53,82 @@ mvn -B -DskipTests package
 copilot plugin install ./plugin
 ```
 
-The plugin contains:
+The `plugin` folder is a plugin for GitHub Copilot and Google Antigravity, and also holds the agent for Claude Code.
+It contains:
 
 - `plugin.json` - plugin manifest
 - `mcp.json` - starts `java -jar ${PLUGIN_ROOT}/server/aem-debug-mcp.jar` over stdio
+- `mcp_config.json` - the same server for Antigravity
 - `skills/aem-local-debugging/SKILL.md` - teaches the agent the debugging loop and recipes
 - `com.github.copilot/agents/aem-debugger.agent.md` - a diagnose-only agent: it can use every debug tool except
   `aem_debug_toggle`, plus reading and searching code, but cannot edit files, run commands or deploy. Copilot
   hands debugging tasks to it, or you select it with `/agent` (or `copilot --agent aem-debug-mcp:aem-debugger`;
   plugin agents carry the plugin name as a prefix). It returns a diagnosis with evidence and the file
-  and line to fix, so screenshots, logs and snapshots stay out of your main conversation. Agents are
-  Copilot-specific; the server and the skill also work in other clients.
+  and line to fix, so screenshots, logs and snapshots stay out of your main conversation.
+- `agents/aem-debugger.md` and `claude-code/agents/aem-debugger.md` - the same agent for Antigravity and for
+  Claude Code. A test keeps the three agents' instructions in sync and their tool lists in line with the server.
 - `bin/aem-debug-mcp.cmd|sh` - launchers with a Java version check (for standalone use)
 
-Edit `plugin/mcp.json` (before installing) to change the AEM URLs, the fallback JDWP ports or to add
-`AEM_PROJECT_DIR`.
+Copilot ignores `agents/`, `claude-code/` and `mcp_config.json`. Edit `plugin/mcp.json` (before installing) to
+change the AEM URLs, the fallback JDWP ports or to add `AEM_PROJECT_DIR`.
 `java` must be a JDK 17+ on the `PATH`; otherwise replace `"command": "java"` with the full path of your JDK's
 `java` executable.
+
+## Install in Google Antigravity
+
+```
+mvn -B -DskipTests package
+agy plugin install ./plugin
+```
+
+This installs the server, the skill and the agent; the Antigravity app and its CLI (`agy`) share installed plugins.
+After a rebuild, run the command again: it replaces the installed copy and keeps the plugin data.
+
+- **Server**: Antigravity reads `mcp_config.json` (`mcp.json` instead, while its `enable-agent-plugins-spec` flag is
+  on). Edit it before installing to change settings, or to give the full path of a JDK 17+ `java`. In Antigravity
+  the server is named `aem-debug-mcp_aem-debug`.
+- **Permissions**: Antigravity asks before each MCP tool call. To allow aem-debug's tools, add
+  `mcp(aem-debug-mcp_aem-debug/*)` to `permissions.allow` in Antigravity's settings.
+- **The agent**: start `agy --agent aem-debugger`, pick it in the app's agent picker, or ask for it by name, for
+  example "Use the aem-debugger subagent to find out why ...". The main agent doesn't hand tasks to it by itself.
+- **The agent's tools**: an Antigravity agent's tool list takes only built-in tools. The agent lists four that only
+  read (`view_file`, `grep_search`, `find_by_name`, `list_dir`) and gets aem-debug's tools through
+  `inheritMcp: true`: all of them, including `aem_debug_toggle`. So in Antigravity, what keeps the agent from the
+  toggle is its instructions, together with the toggle's own confirmation step.
+
+## Install in Claude Code
+
+Claude Code runs the jar as a standalone MCP server; the skill and the agent are copied into `~/.claude`.
+
+1. Copy `plugin/server/aem-debug-mcp.jar` to a folder of its own, for example `C:/tools/aem-debug-mcp/`. A running
+   server keeps its jar open, and on Windows that stops the next build from replacing it.
+2. Add the server for all your projects:
+
+   ```
+   claude mcp add --scope user -e AEM_DEBUG_ARTIFACTS_DIR=C:/tools/aem-debug-mcp/data --transport stdio aem-debug -- java -jar C:/tools/aem-debug-mcp/aem-debug-mcp.jar
+   ```
+
+   Keep the name `aem-debug`: the agent's tools are named `mcp__aem-debug__<tool>`. Replace `java` with the full
+   path of a JDK 17+ `java` if the one on the `PATH` is older. Add other settings from
+   [Configuration](#configuration) as more `-e NAME=value` options. `claude mcp list` shows whether it connects.
+3. Copy the skill and the agent (again after an update):
+
+   ```
+   # macOS and Linux
+   mkdir -p ~/.claude/skills ~/.claude/agents
+   cp -R plugin/skills/aem-local-debugging ~/.claude/skills/
+   cp plugin/claude-code/agents/aem-debugger.md ~/.claude/agents/
+   ```
+
+   ```
+   # Windows PowerShell
+   New-Item -ItemType Directory -Force "$HOME/.claude/skills", "$HOME/.claude/agents" | Out-Null
+   Copy-Item -Recurse -Force plugin/skills/aem-local-debugging "$HOME/.claude/skills/"
+   Copy-Item -Force plugin/claude-code/agents/aem-debugger.md "$HOME/.claude/agents/"
+   ```
+
+Start the agent with `claude --agent aem-debugger`, or ask Claude to use the aem-debugger subagent. It gets Read,
+Grep and Glob, and every debug tool except `aem_debug_toggle`; it has no tools to edit files or run commands.
 
 ## Standalone (any MCP client)
 
@@ -113,6 +172,18 @@ IntelliJ and the MCP server cannot be attached to the AEM debug port at the same
 debugger). Stop the IntelliJ "Remote JVM Debug" session before the agent uses the `jvm_*` tools or
 `debug_page`; the server detaches when asked (`jvm_connection action=detach`), on `debug_cleanup`, or after
 `AEM_DEBUG_IDLE_DETACH_MINUTES` of inactivity, so you can reattach IntelliJ.
+
+## More than one AI tool
+
+You can install aem-debug-mcp in several AI tools on one machine. Each tool runs its own server with its own data
+folder: Copilot and Antigravity use their plugin data folders (the Antigravity app and CLI each have one), Claude
+Code the folder in `AEM_DEBUG_ARTIFACTS_DIR`. So each tool asks for the AEM login once and keeps its own remembered
+logins, project folders and dev servers.
+
+Only one tool at a time can attach a debugger to AEM, because an AEM JVM accepts a single JDWP debugger, IntelliJ
+included. While one chat is attached, `aem_status` in the others reports that another debugger is connected, and
+their `debug_page` runs without JVM capture. `debug_cleanup` or `jvm_connection action=detach` in the attached chat
+frees the port, and so does `AEM_DEBUG_IDLE_DETACH_MINUTES` of inactivity.
 
 ## Configuration
 
