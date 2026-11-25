@@ -228,9 +228,10 @@ Code, the server connects and the agent gets exactly its declared tools, but it 
 Not yet verified on a real page: `aem_debug_toggle`, breakpoint and exception snapshots in project code,
 `debug_capture`, `aem_query`, `aem_resolve`, `aem_recent_requests` (the Request Progress Tracker, also in
 `debug_page`), and the newer publish JVM capture and site login window.
-Interactive suspend/step debugging and a companion OSGi bundle are planned for later phases;
-[docs/backlog.md](docs/backlog.md) lists them with the other open work. See
-[docs/spike-findings.md](docs/spike-findings.md) and [docs/troubleshooting.md](docs/troubleshooting.md).
+The [backlog](docs/backlog.md) lists future directions: interactive suspend/step debugging and a companion OSGi
+bundle (both planned for later phases), cloud and server-side debugging (being explored), and other open work.
+Remote debugging isn't supported today. See [docs/spike-findings.md](docs/spike-findings.md) and
+[docs/troubleshooting.md](docs/troubleshooting.md) for current evidence and limitations.
 
 ## License
 
