@@ -3,8 +3,8 @@
 aem-debug-mcp gives your AI assistant the four views of a **local** AEM bug: the rendered page, the components and
 content behind it, the logs of that request, and the JVM state, joined per HTTP request. The agent collects them
 itself, so you no longer paste screenshots, logs or variable values into the chat. It's an MCP server that installs
-as a GitHub Copilot plugin or runs standalone in other MCP clients, for a local AEM SDK or AEM 6.5 (author and
-publish) and the front-end dev servers that proxy to them.
+as a plugin in GitHub Copilot or Google Antigravity, or runs standalone in other MCP clients such as Claude Code, for
+a local AEM SDK or AEM 6.5 (author and publish) and the front-end dev servers that proxy to them.
 
 ```
 browser render ──► component map ──► Sling Models / HTL / local source
@@ -36,8 +36,31 @@ debugger. AI assistants see your code, and with browser tools the page, but not 
 | A variable's value during a request | A breakpoint that pauses AEM | A snapshot, while AEM keeps running |
 | Whether your fix is deployed | Bundles in the Felix web console | `jvm_classes` compares the running class with your build |
 
-[docs/why.md](docs/why.md) walks through use cases and compares aem-debug-mcp with GitHub Copilot, Claude Code,
-Adobe's AEM MCP server and other tools.
+### Side by side
+
+*As of November 2026; these tools change quickly.*
+
+|  | Browser tools | [IntelliJ IDEA agentic debugging](https://www.jetbrains.com/help/idea/agentic-debugging.html) | [mcp-jdwp-java](https://github.com/FgForrest/mcp-jdwp-java) | [Adobe AEM MCP server](https://experienceleague.adobe.com/en/docs/experience-manager-cloud-service/content/ai-in-aem/mcp-support/using-mcp-with-aem-as-a-cloud-service) | [Apache Sling MCP server](https://sling.apache.org/documentation/bundles/mcp-server.html) | **aem-debug-mcp** |
+|---|---|---|---|---|---|---|
+| Rendered page | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ |
+| Page → AEM components | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
+| error.log of this page's requests | ❌ | ❌ | ❌ | ❌ | ⚠️ recent logs | ✅ |
+| JVM values without pausing | ❌ | ✅ logpoints | ✅ logpoints | ❌ | ❌ | ✅ snapshots |
+| All joined per HTTP request | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
+| Where | Any page | JVMs the IDE debugs | Any JVM with JDWP | AEM as a Cloud Service | Sling Starter | Local AEM SDK or 6.5 |
+
+Each of the other tools covers part of the picture; what aem-debug-mcp adds is the join: the rendered page, its AEM
+components, and the logs and JVM state of that page's requests, matched per HTTP request. "Browser tools" means
+[VS Code's browser tools](https://code.visualstudio.com/docs/agents/run/browser-tools),
+[Claude in Chrome](https://code.claude.com/docs/en/chrome),
+[Playwright MCP](https://github.com/microsoft/playwright-mcp) or
+[Chrome DevTools MCP](https://github.com/ChromeDevTools/chrome-devtools-mcp). The
+[full comparison](docs/why.md#how-it-compares) has more rows, community AEM MCP servers such as aem-dev-mcp, and
+footnotes and sources.
+
+[docs/why.md](docs/why.md) walks through use cases and answers [common questions](docs/why.md#common-questions), such
+as why not use Adobe's AEM MCP server or IntelliJ IDEA's debugger, and whether it works with cloud environments or
+Copilot cloud agent.
 
 ## What it does
 
@@ -77,9 +100,11 @@ Adobe's AEM MCP server and other tools.
 
 See [docs/tools.md](docs/tools.md) for what each tool does. The bundled
 [`aem-local-debugging` skill](plugin/skills/aem-local-debugging/SKILL.md) teaches the agent the debugging loop.
-In Copilot, the plugin also adds the diagnose-only
-[`aem-debugger` agent](plugin/com.github.copilot/agents/aem-debugger.agent.md). Copilot can hand it a debugging
-task; it uses the debug tools, cannot change anything, and returns the cause with the file and line to fix.
+The plugin also has a diagnose-only `aem-debugger` agent, in versions for
+[Copilot](plugin/com.github.copilot/agents/aem-debugger.agent.md), [Antigravity](plugin/agents/aem-debugger.md) and
+[Claude Code](plugin/claude-code/agents/aem-debugger.md). You or your assistant can hand it a debugging task; it
+uses the debug tools and reads code, has no tools to edit files or run commands, and returns the cause with the file
+and line to fix.
 
 ## Safety model
 
@@ -126,6 +151,11 @@ task; it uses the debug tools, cannot change anything, and returns the cause wit
 mvn -B -DskipTests package          # builds target/aem-debug-mcp.jar and copies it to plugin/server/
 copilot plugin install ./plugin
 ```
+
+**Google Antigravity plugin** (server, skill and agent): build as above, then `agy plugin install ./plugin`.
+
+**Claude Code**: add the jar with `claude mcp add` and copy the skill and the agent into `~/.claude`
+([docs/setup.md](docs/setup.md#install-in-claude-code)).
 
 **Standalone MCP server** (VS Code, IntelliJ or any MCP client): run `java -jar aem-debug-mcp.jar` over stdio.
 [docs/setup.md](docs/setup.md) has ready-to-paste `mcp.json` snippets and all configuration variables (AEM
@@ -176,9 +206,10 @@ src/main/java/dev/aemdebug/
   toggles/    confirmed, journaled, auto-reverted debug OSGi toggles
   project/    local project indexer (models, components, HTL, servlets, OSGi configs, clientlibs)
 fixture-app/  tiny JVM app used by the JDI tests
-plugin/       Copilot plugin: plugin.json, mcp.json, skills/aem-local-debugging,
-              com.github.copilot/agents/aem-debugger, launchers
-docs/         why (use cases, comparison), setup, tools, troubleshooting, spike findings
+plugin/       plugin for Copilot and Antigravity: plugin.json, mcp.json (Copilot), mcp_config.json (Antigravity),
+              skills/aem-local-debugging, launchers, and the aem-debugger agent for Copilot
+              (com.github.copilot/agents), Antigravity (agents) and Claude Code (claude-code/agents)
+docs/         why (use cases, comparison, common questions), setup, tools, troubleshooting, spike findings, backlog
 ```
 
 ## Status and limits
@@ -190,11 +221,17 @@ exception watch, component location, error.log lines matched to the page's own r
 AEM login window on publish, AEM logins remembered for later chats (reused on author and publish), rendering
 publish pages, and `debug_page` on dev-server pages (the calls that reached publish, with their error.log lines).
 JDWP port detection was checked on a local author (port detected from its JVM) and publish (reported as started
-without JDWP). Not yet verified on a real page: `aem_debug_toggle`, breakpoint and exception snapshots in project
-code, linking components to local source files, `debug_capture`, `aem_query`, `aem_resolve`, `aem_recent_requests`
-(the Request Progress Tracker, also in `debug_page`), and the newer publish JVM capture and site login window.
-Interactive suspend/step debugging and a companion OSGi bundle are planned for later phases. See
-[docs/spike-findings.md](docs/spike-findings.md) and [docs/troubleshooting.md](docs/troubleshooting.md).
+without JDWP). With the WKND sample on a local AEM SDK author, the `aem-debugger` agent diagnosed a page in GitHub
+Copilot CLI and in the Google Antigravity CLI: `debug_page` with JVM capture, `component_inspect`, and components
+linked to their local Sling Model and HTL files. In both, it had no tool to create a file when asked to. In Claude
+Code, the server connects and the agent gets exactly its declared tools, but it hasn't been run against a page yet.
+Not yet verified on a real page: `aem_debug_toggle`, breakpoint and exception snapshots in project code,
+`debug_capture`, `aem_query`, `aem_resolve`, `aem_recent_requests` (the Request Progress Tracker, also in
+`debug_page`), and the newer publish JVM capture and site login window.
+The [backlog](docs/backlog.md) lists future directions: interactive suspend/step debugging and a companion OSGi
+bundle (both planned for later phases), cloud and server-side debugging (being explored), and other open work.
+Remote debugging isn't supported today. See [docs/spike-findings.md](docs/spike-findings.md) and
+[docs/troubleshooting.md](docs/troubleshooting.md) for current evidence and limitations.
 
 ## License
 
