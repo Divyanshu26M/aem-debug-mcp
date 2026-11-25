@@ -39,8 +39,9 @@ Where it stands out:
 - **From page to source.** `debug_page` renders the page in headless Edge or Chrome and numbers each component (#n)
   on the screenshot. Each one comes with its resource path and type, whether it rendered empty, its Sling Model and
   HTL script, and the matching local files. `component_inspect` then compares the stored content with what the model
-  exposes. We haven't found another tool that maps the rendered page to its components; content servers list a
-  page's components from the repository.
+  exposes. We haven't found another tool that gives an agent this map. For a person, AEM 6.5's Developer mode in the
+  page editor and browser extensions such as aem-inspector show the components on a page, and content servers list
+  a page's components from the repository.
 - **One page load, joined.** Sling names each request thread after its request, and the same name appears in
   error.log and in the JVM. So `debug_page` matches error.log lines, exceptions, snapshots and Request Progress
   Tracker entries to the browser requests of that page load, and sets aside other tabs, the author UI and background
@@ -77,8 +78,8 @@ Use them alongside aem-debug-mcp:
 - **The AEM Developer Console:** read-only views of cloud environments, including Sling jobs, Oak index definitions
   and a query performance tool
   ([docs](https://experienceleague.adobe.com/en/docs/experience-manager-cloud-service/content/implementing/developing/aem-developer-console)).
-  aem-debug-mcp has no tools yet for queries, Sling jobs, workflows, replication or thread dumps (see
-  [More server-side views](#more-server-side-views)).
+  aem-debug-mcp has no tools yet for query performance (which queries ran, and their plans), Sling jobs, workflows,
+  replication or thread dumps (see [More server-side views](#more-server-side-views)).
 - **Dispatcher MCP server:** Dispatcher configuration, caching and rewrites.
 - **IntelliJ IDEA:** stepping through code, changing values while paused, and thread dumps. AEM accepts one debugger
   at a time, so aem-debug-mcp detaches first.
@@ -115,9 +116,10 @@ Implemented, but not yet verified on a real AEM page or setup:
 
 Read-only and local like the rest, and tied to the page's requests where possible:
 
-- **Queries:** which queries a page's requests ran, how long they took, and Oak's plan for each (`explain`), to find
-  the traversal or missing index behind a slow or empty component. One way to evaluate: raise Oak's query logging
-  with `aem_debug_toggle` and match its lines by thread name, as error.log lines are matched today.
+- **Query performance:** which queries a page's requests ran, how long they took, and Oak's plan for each
+  (`explain`), to find the traversal or missing index behind a slow or empty component. `aem_query` runs a
+  QueryBuilder search for you today; this is about the queries the page itself runs. One way to evaluate: raise Oak's
+  query logging with `aem_debug_toggle` and match its lines by thread name, as error.log lines are matched today.
 - **Thread dump without a debugger:** for a request that hangs, the stack of its request thread (found by its Sling
   thread name) and of the threads it waits on. `jcmd <pid> Thread.print` uses the JDK's attach mechanism, which
   aem-debug-mcp already uses to find the JDWP port, so this would also work on an instance started without JDWP.
@@ -134,9 +136,10 @@ Each needs a check of what the SDK and 6.5 expose, and has to fit the
   in Git, so today you build it first. A release workflow could publish the jar, and the plugin's launcher could
   download it on first start, check its SHA-256 and keep it in the plugin's data folder.
 - **Listings.** A Copilot plugin marketplace file (`.github/plugin/marketplace.json`), the awesome-copilot list and
-  Antigravity's plugin submission.
+  the Antigravity Marketplace, which asks for a display name, a logo, suggested prompts and a README in the plugin.
 - **A Claude Code plugin.** Claude Code plugins can hold skills, agents and MCP servers, so today's manual setup
-  (`claude mcp add`, then copying the skill and the agent) could become one install.
+  (`claude mcp add`, then copying the skill and the agent) could become one install. Plugins namespace their MCP
+  servers, so the agent's tool list would need the new tool names.
 
 ### Routing in AI assistants
 
@@ -161,11 +164,12 @@ From the README's [Status and limits](../README.md#status-and-limits):
 
 ## Ideas, not decided
 
-- **A cloud mode.** A separate, opt-in, read-only server for RDE, dev and stage, built in steps: first reading
-  Developer Console dumps and Cloud Manager log files you downloaded, then logs and renders of allowlisted hosts,
-  then author reads, and optionally a confirmed one-property content fix on dev and test authors. The local server
-  would keep its local-only check, which stops a pasted or injected link from sending the agent, with your session,
-  to another host. JVM debugging isn't possible there: cloud environments have no JDWP.
+- **A cloud mode.** A separate, opt-in server for RDEs, development and stage environments, built in steps: first
+  reading Developer Console dumps and Cloud Manager log files you downloaded, then logs and renders of allowlisted
+  hosts, then author reads. It would be read-only, except perhaps a one-property content fix on development authors
+  that you confirm each time. The local server would keep its local-only check, which stops a pasted or injected
+  link from sending the agent, with your session, to another host. JVM debugging isn't possible there: cloud
+  environments have no JDWP.
 - **A broader name.** aem-debug-mcp also helps check changes during development, not only debug them. Candidates:
   `aem-lens`, `aem-xray`, `aem-devloop`. Already used by other projects: `aem-dev-mcp` (an AEM MCP server) and
   `aem-inspector` (a browser extension).
