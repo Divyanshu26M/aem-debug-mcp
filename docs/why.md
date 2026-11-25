@@ -9,6 +9,7 @@ GitHub Copilot, Claude Code, Google Antigravity or another MCP client; it doesn'
 - [Use cases](#use-cases)
 - [How it compares](#how-it-compares)
 - [Safety: why the limits matter when an agent drives](#safety-why-the-limits-matter-when-an-agent-drives)
+- [Common questions](#common-questions)
 
 ## The problem
 
@@ -222,7 +223,7 @@ assistant. On its own, an assistant reads and edits your code and runs a termina
 AEM's JSON and consoles and grep error.log, but by hand and not tied to a page render. The table compares what you
 can add to it.
 
-✅ yes · ⚠️ partly · ❌ no · ❔ not in the documentation
+✅ yes · ⚠️ partly · ❌ no
 
 | Capability | Browser tools¹ | IntelliJ IDEA agentic debugging² | mcp-jdwp-java³ | Adobe AEM MCP server⁴ | Community AEM MCP servers⁵ | Apache Sling MCP server⁶ | aem-debug-mcp |
 |---|---|---|---|---|---|---|---|
@@ -233,17 +234,17 @@ can add to it.
 | Check bundles, OSGi components and configurations | ❌ | ❌ | ❌ | ❌ | ⚠️ one server | ⚠️ bundles and components | ✅ |
 | Get the error.log lines of this page's own requests | ❌ | ❌ | ❌ | ❌ | ⚠️ log search | ⚠️ recent logs | ✅ |
 | Get the Request Progress Tracker of this page's own requests | ❌ | ❌ | ❌ | ❌ | ❌ | ⚠️ recent requests | ✅† |
-| Catch exceptions where they are thrown, including swallowed ones | ❌ | ❔ | ✅ | ❌ | ❌ | ❌ | ✅† |
-| Read variable values without pausing AEM | ❌ | ⚠️ breakpoints pause | ✅ logpoints | ❌ | ❌ | ❌ | ✅ snapshots |
+| Catch exceptions where they are thrown, including swallowed ones | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ✅† |
+| Read variable values without pausing AEM | ❌ | ✅ logpoints | ✅ logpoints | ❌ | ❌ | ❌ | ✅ snapshots |
 | Join all of the above per HTTP request | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
 | Where it works | Any page | JVMs the IDE debugs | Any JVM with JDWP | AEM as a Cloud Service | Local AEM; one also AEM as a Cloud Service | Sling Starter | Local AEM SDK or 6.5, author and publish |
 | Can change AEM or its JVM | ⚠️ through the UI it clicks | ⚠️ sets variables | ⚠️ changes values, runs code | Yes: content, assets, pipelines | Yes: content, workflows; one also OSGi and scripts | No | No, read-only‡ |
 
 1. VS Code's built-in browser tools, Claude in Chrome (for Claude Code), Playwright MCP or Chrome DevTools MCP. They
    see any page from the browser side, AEM's included.
-2. IntelliJ IDEA 2026.1.3 and later expose the debugger to agents over the IDE's MCP server. The agent drives the
-   standard debugger, so a breakpoint pauses the thread until the agent resumes it. Exception breakpoints and
-   non-suspending breakpoints aren't among the documented agent tools.
+2. IntelliJ IDEA 2026.1.3 and later expose the debugger to agents over the IDE's MCP server, as tools prefixed
+   `xdebug_` and `jvm_debug_`. Breakpoints, including method and exception breakpoints, pause the thread until the
+   agent resumes it; logpoints log and let it run on.
 3. A general-purpose JDWP debugger for agents, installed as a Claude Code plugin.
 4. Adobe's unified AEM MCP server for AEM as a Cloud Service: content, Cloud Manager, Experience Governance and Cloud
    Migration tools.
@@ -283,12 +284,17 @@ DevTools MCP analyzes performance. They see AEM pages like any other page. aem-d
 headless browser and adds what AEM did for those requests.
 
 **IntelliJ IDEA agentic debugging.** Since IntelliJ IDEA 2026.1.3, the IDE's MCP server exposes its debugger to
-agents such as Claude Code and Codex, as tools prefixed `xdebug_`
+agents such as Claude Code and Codex, as tools prefixed `xdebug_` and `jvm_debug_`
 ([docs](https://www.jetbrains.com/help/idea/agentic-debugging.html)). An agent can start a session for a run
-configuration (for AEM, a Remote JVM Debug configuration), set breakpoints, step, read variables and evaluate
-expressions. It drives the standard debugger, so the agent waits for a breakpoint to pause the thread, and the
-request waits meanwhile. It's the right tool for stepping through code. aem-debug-mcp detaches first, because AEM
-accepts one debugger at a time.
+configuration (for AEM, a Remote JVM Debug configuration) or a source location, or attach to a running local
+process. It can set, mute and remove breakpoints and logpoints, set method and exception breakpoints, run to a line,
+step, inspect threads, stacks and variables, take thread dumps, evaluate expressions, change values and read the
+debugged process's output. In router mode (2026.2 and later), the IDE exposes one `execute_tool` tool, and the agent
+loads the debugger commands from the bundled `ij-debugger` skill when it needs them. It drives the standard
+debugger: a breakpoint pauses the thread, and the request waits until the agent resumes it, while a logpoint logs
+and lets the thread run on. Its documented tools don't tie a hit to the page, the HTTP request or the AEM component
+that rendered it. It's the right tool for stepping through code. aem-debug-mcp detaches first, because AEM accepts
+one debugger at a time.
 
 **mcp-jdwp-java.** [mcp-jdwp-java](https://github.com/FgForrest/mcp-jdwp-java) is a general-purpose JDWP debugger for
 agents, installed as a Claude Code plugin. Its 50 tools include exception breakpoints at the throw site, logpoints
@@ -394,6 +400,9 @@ Checked on 2 November 2026:
   [indrasishbanerjee/aem-mcp-server](https://github.com/indrasishbanerjee/aem-mcp-server),
   [arkadiusz-rosiak/aem-dev-mcp](https://github.com/arkadiusz-rosiak/aem-dev-mcp)
 
+IntelliJ IDEA's agentic debugging page (updated 3 November), mcp-jdwp-java, Adobe's AEM MCP server and Apache Sling's
+MCP server were rechecked on 25 November 2026.
+
 ## Safety: why the limits matter when an agent drives
 
 An agent chooses tools on its own and acts on text it reads: your prompt, but also page content, log lines and
@@ -426,3 +435,66 @@ repository data. The limits below keep the debugging loop safe even when the age
   files, run commands or deploy. In Copilot and Claude Code it can't toggle debug settings either. In Antigravity an
   agent can't pick single MCP tools, so there its instructions rule the toggle out, and the toggle still needs your
   confirmation. The agent returns the cause and the fix; you decide.
+
+## Common questions
+
+### Doesn't my assistant do this already?
+
+GitHub Copilot, Claude Code and Google Antigravity read and edit your code and run commands, and with browser tools
+they see the rendered page. On their own, they don't map that page to its AEM components or get the logs and JVM
+state of the request behind it. Given credentials, they can curl AEM and grep error.log, but by hand and not tied to
+a page render. aem-debug-mcp is a tool your assistant uses for that, not another assistant
+([what it adds](#what-aem-debug-mcp-adds)).
+
+### Why not Adobe's AEM MCP server?
+
+It does a different job. Adobe's AEM MCP server works with AEM as a Cloud Service: pages, content fragments and
+assets, Cloud Manager and more. Its documentation covers cloud environments, not a local SDK, and its tool areas
+don't include rendering pages, request logs or JVM debugging. Use both: Adobe's server for cloud content and
+pipelines, aem-debug-mcp for what your code does at runtime on your machine ([details](#the-tools-in-more-detail)).
+
+### Why not IntelliJ IDEA, or its agentic debugging?
+
+Use IntelliJ IDEA to step through code, yourself or through its agentic debugging. Its agent tools include logpoints
+and exception breakpoints, but they don't tie a hit to the page, the request or the component, and its breakpoints
+pause the request until the agent resumes it. AEM accepts one debugger at a time, so aem-debug-mcp detaches on
+`debug_cleanup`, on `jvm_connection action=detach` or after 15 idle minutes (`AEM_DEBUG_IDLE_DETACH_MINUTES`), and
+then IntelliJ IDEA can attach again ([one debugger at a time](setup.md#more-than-one-ai-tool)).
+
+### Does it work with cloud environments?
+
+No, by design. It talks only to `localhost`, `127.0.0.1` and `::1`, so a pasted or injected link can't send the agent
+to a shared or production environment ([Safety](#safety-why-the-limits-matter-when-an-agent-drives)). For AEM as a
+Cloud Service, use Adobe's AEM MCP server, Cloud Manager, the
+[Developer Console](https://experienceleague.adobe.com/en/docs/experience-manager-learn/cloud-service/debugging/debugging-aem-as-a-cloud-service/developer-console)
+or a [Rapid Development Environment](https://experienceleague.adobe.com/en/docs/experience-manager-cloud-service/content/implementing/developing/rapid-development-environments)
+(RDE).
+
+### Can Copilot cloud agent use it?
+
+Not with the AEM on your computer. aem-debug-mcp reaches only AEM instances on the machine it runs on, and Copilot
+cloud agent (formerly Copilot coding agent) and Copilot in the cloud run their sessions on GitHub's machines by
+default, in a
+[cloud sandbox](https://docs.github.com/en/copilot/concepts/security-governance-and-network-settings/about-cloud-sandboxes)
+or a GitHub Actions job. Use a session that runs on your machine, for example in Copilot CLI, the GitHub Copilot app,
+VS Code, a JetBrains IDE, Google Antigravity or Claude Code.
+
+### Which AI tools does it work with?
+
+- GitHub Copilot (through Copilot CLI) and Google Antigravity install it as a plugin, with the skill and the
+  `aem-debugger` agent ([Copilot](setup.md#install-as-a-github-copilot-plugin-copilot-cli),
+  [Antigravity](setup.md#install-in-google-antigravity)).
+- Claude Code adds the server with `claude mcp add` and takes the skill and its own version of the agent
+  ([setup](setup.md#install-in-claude-code)).
+- Other MCP clients that start stdio servers, such as VS Code and IntelliJ IDEA, run the jar
+  ([setup](setup.md#standalone-any-mcp-client)).
+
+So far it has been used mostly with GitHub Copilot. The `aem-debugger` agent has also diagnosed a WKND page in
+Antigravity. In Claude Code, the server connects and the agent gets exactly its tools, but it hasn't been run
+against a page yet. Other clients speak the same protocol but haven't been tried.
+
+### Is it safe to let an agent drive it?
+
+It's built for that. It reaches only local instances, and it's read-only, except for debug toggles that need your
+confirmation and are reverted automatically. AEM never pauses, and passwords never go through the chat.
+[Safety](#safety-why-the-limits-matter-when-an-agent-drives) explains why each limit matters.

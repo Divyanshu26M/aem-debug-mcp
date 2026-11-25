@@ -36,8 +36,31 @@ debugger. AI assistants see your code, and with browser tools the page, but not 
 | A variable's value during a request | A breakpoint that pauses AEM | A snapshot, while AEM keeps running |
 | Whether your fix is deployed | Bundles in the Felix web console | `jvm_classes` compares the running class with your build |
 
-[docs/why.md](docs/why.md) walks through use cases and compares aem-debug-mcp with GitHub Copilot, Claude Code,
-Adobe's AEM MCP server and other tools.
+### Side by side
+
+*As of November 2026; these tools change quickly.*
+
+|  | Browser tools | [IntelliJ IDEA agentic debugging](https://www.jetbrains.com/help/idea/agentic-debugging.html) | [mcp-jdwp-java](https://github.com/FgForrest/mcp-jdwp-java) | [Adobe AEM MCP server](https://experienceleague.adobe.com/en/docs/experience-manager-cloud-service/content/ai-in-aem/mcp-support/using-mcp-with-aem-as-a-cloud-service) | [Apache Sling MCP server](https://sling.apache.org/documentation/bundles/mcp-server.html) | **aem-debug-mcp** |
+|---|---|---|---|---|---|---|
+| Rendered page | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ |
+| Page → AEM components | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
+| error.log of this page's requests | ❌ | ❌ | ❌ | ❌ | ⚠️ recent logs | ✅ |
+| JVM values without pausing | ❌ | ✅ logpoints | ✅ logpoints | ❌ | ❌ | ✅ snapshots |
+| All joined per HTTP request | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
+| Where | Any page | JVMs the IDE debugs | Any JVM with JDWP | AEM as a Cloud Service | Sling Starter | Local AEM SDK or 6.5 |
+
+Each of the other tools covers part of the picture; what aem-debug-mcp adds is the join: the rendered page, its AEM
+components, and the logs and JVM state of that page's requests, matched per HTTP request. "Browser tools" means
+[VS Code's browser tools](https://code.visualstudio.com/docs/agents/run/browser-tools),
+[Claude in Chrome](https://code.claude.com/docs/en/chrome),
+[Playwright MCP](https://github.com/microsoft/playwright-mcp) or
+[Chrome DevTools MCP](https://github.com/ChromeDevTools/chrome-devtools-mcp). The
+[full comparison](docs/why.md#how-it-compares) has more rows, community AEM MCP servers such as aem-dev-mcp, and
+footnotes and sources.
+
+[docs/why.md](docs/why.md) walks through use cases and answers [common questions](docs/why.md#common-questions), such
+as why not use Adobe's AEM MCP server or IntelliJ IDEA's debugger, and whether it works with cloud environments or
+Copilot cloud agent.
 
 ## What it does
 
@@ -186,7 +209,7 @@ fixture-app/  tiny JVM app used by the JDI tests
 plugin/       plugin for Copilot and Antigravity: plugin.json, mcp.json (Copilot), mcp_config.json (Antigravity),
               skills/aem-local-debugging, launchers, and the aem-debugger agent for Copilot
               (com.github.copilot/agents), Antigravity (agents) and Claude Code (claude-code/agents)
-docs/         why (use cases, comparison), setup, tools, troubleshooting, spike findings
+docs/         why (use cases, comparison, common questions), setup, tools, troubleshooting, spike findings
 ```
 
 ## Status and limits
