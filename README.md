@@ -209,7 +209,7 @@ fixture-app/  tiny JVM app used by the JDI tests
 plugin/       plugin for Copilot and Antigravity: plugin.json, mcp.json (Copilot), mcp_config.json (Antigravity),
               skills/aem-local-debugging, launchers, and the aem-debugger agent for Copilot
               (com.github.copilot/agents), Antigravity (agents) and Claude Code (claude-code/agents)
-docs/         why (use cases, comparison, common questions), setup, tools, troubleshooting, spike findings
+docs/         why (use cases, comparison, common questions), setup, tools, troubleshooting, spike findings, backlog
 ```
 
 ## Status and limits
@@ -228,7 +228,8 @@ Code, the server connects and the agent gets exactly its declared tools, but it 
 Not yet verified on a real page: `aem_debug_toggle`, breakpoint and exception snapshots in project code,
 `debug_capture`, `aem_query`, `aem_resolve`, `aem_recent_requests` (the Request Progress Tracker, also in
 `debug_page`), and the newer publish JVM capture and site login window.
-Interactive suspend/step debugging and a companion OSGi bundle are planned for later phases. See
+Interactive suspend/step debugging and a companion OSGi bundle are planned for later phases;
+[docs/backlog.md](docs/backlog.md) lists them with the other open work. See
 [docs/spike-findings.md](docs/spike-findings.md) and [docs/troubleshooting.md](docs/troubleshooting.md).
 
 ## License
